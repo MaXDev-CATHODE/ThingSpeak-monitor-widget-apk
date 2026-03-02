@@ -1,0 +1,29 @@
+# --- Środowisko deweloperskie i wrażliwe dane ---
+.bin/
+.agent/
+.kluster/
+local.properties
+.idea/
+.gradle/
+.kotlin/
+build/
+app/build/
+*.iml
+captures/
+.externalNativeBuild
+.cxx
+google-services.json
+.gitlab-ci.yml
+
+# --- Pliki binarne i klucze podpisywania ---
+*.jks
+*.keystore
+*.apk
+*.aab
+
+# --- Systemowe ---
+Thumbs.db
+.DS_Store
+
+# --- Logi ---
+*.log
