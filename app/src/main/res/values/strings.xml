@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ThingSpeak Monitor</string>
+    <string name="widget_name_glance">ThingSpeak - Kanał</string>
+    <string name="widget_name_grid">ThingSpeak - Wartości</string>
+    <string name="widget_description">Monitor ThingSpeak channel data</string>
+    <string name="widget_configure_title">Configure Widget</string>
+    <string name="widget_channel_id_label">Channel ID</string>
+    <string name="widget_api_key_label">Read API Key (optional)</string>
+    <string name="widget_channel_name_label">Channel Name (optional)</string>
+    <string name="widget_save">Save</string>
+    <string name="widget_no_data">Tap to configure</string>
+    <string name="widget_loading">Loading…</string>
+    <string name="widget_stale_data">Data may be outdated</string>
+    <string name="widget_last_updated">Updated %1$s</string>
+    <string name="widget_channel_id_error">Please enter a valid Channel ID</string>
+    <string name="widget_visible_fields">Fields to display:</string>
+
+    <string name="chart_title_channel">Channel: %1$s</string>
+    <string name="chart_range_1d">1 Day</string>
+    <string name="chart_range_7d">1 Week</string>
+    <string name="chart_range_30d">1 Month</string>
+    <string name="chart_empty_data">No data available for selected period</string>
+    <string name="chart_loading">Loading historical data...</string>
+
+    <!-- Dashboard & UI -->
+    <string name="dashboard_title">IoT Dashboard</string>
+    <string name="dashboard_empty_title">No channels yet.</string>
+    <string name="dashboard_empty_subtitle">Tap + to add your first ThingSpeak channel.</string>
+    <string name="dashboard_add_channel">Add Channel</string>
+    <string name="dialog_add_channel_title">Add New Channel</string>
+    <string name="dialog_channel_id">Channel ID (e.g. 12397)</string>
+    <string name="dialog_api_key">Read API Key (Optional)</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_add">Add</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_refresh_interval">Auto-refresh Interval</string>
+    <string name="settings_refresh_1s">1 Second (Live)</string>
+    <string name="settings_refresh_5s">5 Seconds</string>
+    <string name="settings_refresh_15s">15 Seconds</string>
+    <string name="settings_refresh_60s">1 Minute</string>
+    <string name="error_invalid_channel">Invalid Channel ID</string>
+    <string name="channel_last_updated">Updated: %1$s</string>
+
+    <string name="dialog_channel_name">Channel Name (Label)</string>
+    <string name="chart_marker_content">%1$.2f\n%2$s</string>
+    <string name="error_channel_exists">Channel with this ID already exists</string>
+    <string name="error_refresh_failed">Refresh failed: %1$s</string>
+    <string name="error_invalid_api_key">Invalid API Key</string>
+    <string name="settings_refresh_title">Refresh Interval</string>
+    <string name="dialog_delete_channel_title">Delete channel?</string>
+    <string name="dialog_delete_channel_message">Are you sure you want to remove this channel from monitoring? Historical data will be deleted from the local database.</string>
+    <string name="dialog_delete">Delete</string>
+    <string name="notification_channel_alerts_name">ThingSpeak Alerts</string>
+    <string name="notification_channel_alerts_desc">Notifications for channel value threshold violations.</string>
+    <string name="notification_alert_title">ThingSpeak Alert: %1$s</string>
+    <string name="notification_alert_content">Field %1$s: value %2$s</string>
+    
+    <!-- Search Dialog -->
+    <string name="dialog_add_manual">Manual</string>
+    <string name="dialog_search_public">Search</string>
+    <string name="dialog_search_hint">Search public channels...</string>
+    
+    <string name="settings_server_url">Server Address (Base URL)</string>
+    <string name="settings_server_url_hint">e.g. https://api.thingspeak.com</string>
+    
+    <!-- Charts Export -->
+    <string name="chart_title">Channel Chart</string>
+    <string name="chart_export">Export</string>
+    <string name="chart_export_csv">Export to CSV</string>
+    <string name="chart_export_pdf">Export PDF Report</string>
+    <string name="chart_export_success">File saved successfully</string>
+    <string name="chart_export_error">Error saving file</string>
+    <string name="widget_appearance">Widget Appearance</string>
+    <string name="widget_bg_color">Background Color</string>
+    <string name="widget_transparency_label">Transparency: %1$d%%</string>
+    <string name="widget_font_size_label">Font Size: %1$d sp</string>
+    <string name="widget_action_refresh">Refresh</string>
+    <string name="widget_action_edit">Edit</string>
+    <string name="widget_status_stale">STALE</string>
+    <string name="widget_sync_prefix">Sync: %1$s</string>
+    <string name="widget_error_title">Widget Error</string>
+    <string name="widget_content_chart">Chart</string>
+    <string name="widget_pick_saved">Pick from saved:</string>
+    <string name="widget_chart_source">Chart Data Source:</string>
+    <string name="widget_field_name">Field %1$d</string>
+    <string name="widget_working_offline">Working Offline — Some data may be stale</string>
+    <string name="widget_glassmorphism">Glassmorphism Effect</string>
+</resources>
+
