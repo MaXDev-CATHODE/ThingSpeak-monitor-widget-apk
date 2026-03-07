@@ -13,36 +13,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: set up JDK 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Decode Keystore
+        if: env.ENCODED_STRING != ''
         env:
           ENCODED_STRING: ${{ secrets.RELEASE_STORE_FILE_BASE64 }}
           STORE_PASS: ${{ secrets.RELEASE_STORE_PASSWORD }}
         run: |
-          echo "=== DIAGNOSTICS ==="
-          echo "Secret length: ${#ENCODED_STRING} chars"
-          echo "First 20 chars: ${ENCODED_STRING:0:20}"
-          echo "Last 10 chars: ${ENCODED_STRING: -10}"
           CLEAN=$(echo "$ENCODED_STRING" | sed '/^-----/d' | tr -d '\n\r\t ')
-          echo "Cleaned length: ${#CLEAN} chars"
           echo "$CLEAN" | base64 -d > /tmp/release.jks
-          echo "Decoded file size: $(wc -c < /tmp/release.jks) bytes (expected: 2752)"
-          echo "File type: $(file /tmp/release.jks)"
-          echo "MD5: $(md5sum /tmp/release.jks | cut -d' ' -f1)"
-          keytool -list -keystore /tmp/release.jks -storepass "$STORE_PASS" -storetype PKCS12 2>&1 | head -5 || echo "keytool FAILED"
-          echo "=== END DIAGNOSTICS ==="
+          echo "Keystore decoded: $(wc -c < /tmp/release.jks) bytes"
+          keytool -list -keystore /tmp/release.jks -storepass "$STORE_PASS" -storetype PKCS12 2>&1 | head -3 || echo "keytool validation failed"
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease --stacktrace
         env:
           RELEASE_STORE_FILE: /tmp/release.jks
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
