@@ -18,7 +18,7 @@ data class FeedEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val channelId: Long,
     val entryId: Long = 0,
-    val createdAt: String,
+    val createdAt: String = "",
     val field1: String? = null,
     val field2: String? = null,
     val field3: String? = null,

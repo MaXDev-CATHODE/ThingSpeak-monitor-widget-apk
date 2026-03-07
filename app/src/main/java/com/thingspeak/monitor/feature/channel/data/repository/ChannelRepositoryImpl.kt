@@ -8,6 +8,8 @@ import com.thingspeak.monitor.feature.channel.domain.model.FeedEntry
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 import com.thingspeak.monitor.feature.alert.data.local.AlertDao
 import com.thingspeak.monitor.feature.alert.data.local.AlertEntity
+import com.thingspeak.monitor.feature.channel.data.local.AlertRuleDao
+import com.thingspeak.monitor.feature.channel.data.local.AlertRuleEntity
 import com.thingspeak.monitor.core.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -31,20 +33,22 @@ class ChannelRepositoryImpl @Inject constructor(
     private val api: ThingSpeakApiService,
     private val feedDao: ChannelFeedDao,
     private val alertDao: AlertDao,
+    private val alertRuleDao: AlertRuleDao,
     private val firedAlertDao: com.thingspeak.monitor.feature.alert.data.local.FiredAlertDao,
+    private val appPrefs: com.thingspeak.monitor.core.datastore.AppPreferences,
     private val channelPrefs: ChannelPreferences,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : ChannelRepository {
 
     override fun observeFeed(channelId: Long): Flow<List<FeedEntry>> {
-        return feedDao.observeFeedEntries(channelId).map { entities ->
+        return feedDao.observeLatestFeedEntries(channelId, 500).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
-    override fun observeChannel(channelId: Long): Flow<com.thingspeak.monitor.feature.channel.domain.model.Channel?> {
-        return channelPrefs.observe().map { channels ->
-            channels.find { it.id == channelId }?.let { saved ->
+    override fun observeChannelList(): Flow<List<com.thingspeak.monitor.feature.channel.domain.model.Channel>> {
+        return channelPrefs.observe().map { list ->
+            list.map { saved ->
                 com.thingspeak.monitor.feature.channel.domain.model.Channel(
                     id = saved.id,
                     name = saved.name,
@@ -64,7 +68,40 @@ class ChannelRepositoryImpl @Inject constructor(
                     chartProcessingPeriod = saved.chartProcessingPeriod,
                     preferredChartFields = saved.preferredChartFields,
                     lastSyncTime = saved.lastSyncTime,
-                    widgetVisibleFields = saved.widgetVisibleFields
+                    widgetVisibleFields = saved.widgetVisibleFields,
+                    lastProcessedEntryId = saved.lastProcessedEntryId
+                )
+            }
+        }
+    }
+
+    override fun observeChannel(channelId: Long): Flow<com.thingspeak.monitor.feature.channel.domain.model.Channel?> {
+        android.util.Log.v("AUDIT_V11", "Repo [OBSERVE_CHANNEL_START] id=$channelId")
+        return channelPrefs.observe().map { channels ->
+            val found = channels.find { it.id == channelId }
+            android.util.Log.v("AUDIT_V11", "Repo [OBSERVE_CHANNEL_EMIT] id=$channelId, found=${found != null}")
+            found?.let { saved ->
+                com.thingspeak.monitor.feature.channel.domain.model.Channel(
+                    id = saved.id,
+                    name = saved.name,
+                    apiKey = saved.apiKey,
+                    fieldNames = saved.fieldNames,
+                    lastSyncStatus = try {
+                        com.thingspeak.monitor.feature.channel.domain.model.SyncStatus.valueOf(saved.lastSyncStatus)
+                    } catch (e: Exception) {
+                        com.thingspeak.monitor.feature.channel.domain.model.SyncStatus.NONE
+                    },
+                    widgetBgColorHex = saved.widgetBgColorHex,
+                    widgetTransparency = saved.widgetTransparency,
+                    widgetFontSize = saved.widgetFontSize,
+                    isGlassmorphismEnabled = saved.isGlassmorphismEnabled,
+                    chartRounding = saved.chartRounding,
+                    chartProcessingType = saved.chartProcessingType,
+                    chartProcessingPeriod = saved.chartProcessingPeriod,
+                    preferredChartFields = saved.preferredChartFields,
+                    lastSyncTime = saved.lastSyncTime,
+                    widgetVisibleFields = saved.widgetVisibleFields,
+                    lastProcessedEntryId = saved.lastProcessedEntryId
                 )
             }
         }
@@ -96,12 +133,15 @@ class ChannelRepositoryImpl @Inject constructor(
     override suspend fun refreshFeed(channelId: Long, apiKey: String?, results: Int) {
         withContext(ioDispatcher) {
             val startTime = System.currentTimeMillis()
+            android.util.Log.d("AUDIT_V11", "Repo [REFRESH_FEED_START] id=$channelId, results=$results")
             var lastException: Exception? = null
             
             // Retry loop for 429 (Rate Limit) - up to 15 seconds as requested
             while (System.currentTimeMillis() - startTime < 15000) {
                 try {
+                    val networkStart = System.currentTimeMillis()
                     val response = api.getChannelFeed(channelId = channelId, apiKey = apiKey, results = results)
+                    android.util.Log.v("AUDIT_V11", "Repo [REFRESH_FEED_NETWORK_DONE] id=$channelId, time=${System.currentTimeMillis() - networkStart}ms, code=${response.code()}")
                     
                     if (!response.isSuccessful) {
                         if (response.code() == 429) {
@@ -117,7 +157,9 @@ class ChannelRepositoryImpl @Inject constructor(
                     val entities = body.feeds.map { it.toEntity(channelId) }
 
                     if (entities.isNotEmpty()) {
+                        val dbStart = System.currentTimeMillis()
                         feedDao.upsertFeed(entities)
+                        android.util.Log.v("AUDIT_V11", "Repo [REFRESH_FEED_DB_SAVED] id=$channelId, time=${System.currentTimeMillis() - dbStart}ms")
                     }
 
                     // Update channel metadata with SUCCESS status using merge pattern to PRESERVE widget styles
@@ -175,16 +217,20 @@ class ChannelRepositoryImpl @Inject constructor(
     override suspend fun getHistoricalFeed(
         channelId: Long,
         apiKey: String?,
-        start: String,
-        end: String,
+        start: String?,
+        end: String?,
         average: Int?,
+        results: Int?,
+        days: Int?,
     ): List<FeedEntry> = withContext(ioDispatcher) {
         val response = api.getChannelFeedByDateRange(
             channelId = channelId,
             start = start,
             end = end,
             apiKey = apiKey,
-            average = average
+            average = average,
+            results = results,
+            days = days
         )
         if (!response.isSuccessful) {
             val errorMsg = response.errorBody()?.string() ?: "HTTP ${response.code()}"
@@ -268,5 +314,80 @@ class ChannelRepositoryImpl @Inject constructor(
 
     override suspend fun deleteOldEntries(dateCutoff: String) = withContext(ioDispatcher) {
         feedDao.deleteOldEntries(dateCutoff)
+    }
+
+    override suspend fun getAlertsForChannel(channelId: Long): List<com.thingspeak.monitor.feature.channel.domain.model.AlertThreshold> = withContext(ioDispatcher) {
+        alertDao.getAlertsForChannel(channelId).map { entity ->
+            com.thingspeak.monitor.feature.channel.domain.model.AlertThreshold(
+                channelId = entity.channelId,
+                fieldNumber = entity.fieldNumber,
+                fieldName = entity.fieldName,
+                minValue = entity.minValue,
+                maxValue = entity.maxValue,
+                isEnabled = entity.isEnabled
+            )
+        }
+    }
+
+    override fun observeAlertRules(channelId: Long): Flow<List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>> {
+        return alertRuleDao.observeRulesForChannel(channelId).map { entities ->
+            entities.map { entity ->
+                com.thingspeak.monitor.feature.channel.domain.model.AlertRule(
+                    id = entity.id,
+                    channelId = entity.channelId,
+                    fieldNumber = entity.fieldNumber,
+                    condition = entity.condition,
+                    thresholdValue = entity.thresholdValue,
+                    isEnabled = entity.isEnabled
+                )
+            }
+        }
+    }
+
+    override suspend fun getAlertRulesForChannel(channelId: Long): List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule> = withContext(ioDispatcher) {
+        alertRuleDao.getRulesForChannel(channelId).map { entity ->
+            com.thingspeak.monitor.feature.channel.domain.model.AlertRule(
+                id = entity.id,
+                channelId = entity.channelId,
+                fieldNumber = entity.fieldNumber,
+                condition = entity.condition,
+                thresholdValue = entity.thresholdValue,
+                isEnabled = entity.isEnabled
+            )
+        }
+    }
+
+    override suspend fun getFiredAlert(channelId: Long, fieldNumber: Int): com.thingspeak.monitor.feature.alert.domain.model.FiredAlert? = withContext(ioDispatcher) {
+        firedAlertDao.getFiredAlert(channelId, fieldNumber)?.let { entity ->
+            com.thingspeak.monitor.feature.alert.domain.model.FiredAlert(
+                channelId = entity.channelId,
+                fieldNumber = entity.fieldNumber,
+                lastFiredEntryId = entity.lastFiredEntryId,
+                timestamp = entity.timestamp,
+                lastFiredTimestamp = entity.lastFiredTimestamp,
+                violationSignature = entity.violationSignature
+            )
+        }
+    }
+
+    override suspend fun saveFiredAlert(firedAlert: com.thingspeak.monitor.feature.alert.domain.model.FiredAlert) = withContext(ioDispatcher) {
+        firedAlertDao.insertFiredAlert(
+            com.thingspeak.monitor.feature.alert.data.local.FiredAlertEntity(
+                channelId = firedAlert.channelId,
+                fieldNumber = firedAlert.fieldNumber,
+                lastFiredEntryId = firedAlert.lastFiredEntryId,
+                timestamp = firedAlert.timestamp,
+                lastFiredTimestamp = firedAlert.lastFiredTimestamp,
+                violationSignature = firedAlert.violationSignature
+            )
+        )
+    }
+
+    override suspend fun deleteFiredAlert(channelId: Long, fieldNumber: Int) = withContext(ioDispatcher) {
+        firedAlertDao.deleteFiredAlert(channelId, fieldNumber)
+    }
+
+    override suspend fun getSyncInterval(): Long {
+        return appPrefs.observeHighFrequencyInterval().first()
     }
 }

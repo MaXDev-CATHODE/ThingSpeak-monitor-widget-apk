@@ -24,6 +24,11 @@ class RescheduleWorker @AssistedInject constructor(
         return try {
             val intervalMinutes = appPreferences.observeSyncInterval().first()
             DataSyncWorker.schedule(applicationContext, intervalMinutes)
+
+            val isHighFreqEnabled = appPreferences.observeIsHighFrequencyEnabled().first()
+            if (isHighFreqEnabled) {
+                DataSyncService.start(applicationContext)
+            }
             Result.success()
         } catch (e: Exception) {
             Result.retry()

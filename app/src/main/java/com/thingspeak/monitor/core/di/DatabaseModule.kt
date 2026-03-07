@@ -65,6 +65,7 @@ object DatabaseModule {
             "thingspeak_monitor.db"
         )
             .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_5_6)
+            .enableMultiInstanceInvalidation()
             .fallbackToDestructiveMigration()
             .build()
     }
@@ -82,4 +83,7 @@ object DatabaseModule {
 
     @Provides
     fun provideAlertRuleDao(db: ThingSpeakDatabase) = db.alertRuleDao()
+
+    @Provides
+    fun provideWidgetBindingDao(db: ThingSpeakDatabase) = db.widgetBindingDao()
 }

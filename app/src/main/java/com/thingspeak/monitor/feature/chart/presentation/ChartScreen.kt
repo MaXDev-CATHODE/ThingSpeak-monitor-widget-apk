@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thingspeak.monitor.R
@@ -68,21 +70,31 @@ fun ChartScreen(
         contract = ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
         uri?.let {
-            scope.launch {
-                try {
-                    // Generowanie CSV może chwilę zająć, więc przenosimy to z Main do Dispatchers.IO
-                    val csvContent = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                        viewModel.exportCsv()
-                    }
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        context.contentResolver.openOutputStream(it)?.use { stream ->
-                            stream.write(csvContent.toByteArray(Charsets.UTF_8))
+            val outputStream = try { 
+                context.contentResolver.openOutputStream(it) 
+            } catch (e: Exception) { 
+                null 
+            }
+            
+            if (outputStream != null) {
+                scope.launch {
+                    try {
+                        // Generating CSV may take some time, so moving to Default dispatcher
+                        val csvContent = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                            viewModel.exportCsv()
                         }
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            outputStream.use { stream ->
+                                stream.write(csvContent.toByteArray(Charsets.UTF_8))
+                            }
+                        }
+                        snackbarHostState.showSnackbar(context.getString(R.string.chart_export_success))
+                    } catch (e: Exception) {
+                        snackbarHostState.showSnackbar(context.getString(R.string.chart_export_error))
                     }
-                    snackbarHostState.showSnackbar(context.getString(R.string.chart_export_success))
-                } catch (e: Exception) {
-                    snackbarHostState.showSnackbar(context.getString(R.string.chart_export_error))
                 }
+            } else {
+                scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.chart_export_error)) }
             }
         }
     }
@@ -110,12 +122,12 @@ fun ChartScreen(
                 title = { Text(stringResource(R.string.chart_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.chart_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { showDateRangePicker = true }) {
-                        Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Range")
+                        Icon(imageVector = Icons.Default.DateRange, contentDescription = stringResource(R.string.chart_select_range))
                     }
                     // Live Mode Toggle (Replaced standard refresh)
                     val isLiveMode by viewModel.isLiveMode.collectAsStateWithLifecycle()
@@ -123,7 +135,7 @@ fun ChartScreen(
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = "Live Mode",
+                                contentDescription = stringResource(R.string.chart_live_mode),
                                 tint = if (isLiveMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             if (isLiveMode) {
@@ -139,7 +151,7 @@ fun ChartScreen(
                     IconButton(onClick = { viewModel.toggleMerging() }) {
                         Icon(
                             imageVector = if (isMerged) Icons.Default.CallMerge else Icons.Default.CallSplit,
-                            contentDescription = "Toggle Merging",
+                            contentDescription = stringResource(R.string.chart_toggle_merging),
                             tint = if (isMerged) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -175,6 +187,7 @@ fun ChartScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
+                .graphicsLayer(clip = false)
         ) {
             // Field Selection
             Row(
@@ -233,7 +246,7 @@ fun ChartScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("Smooth", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.chart_smooth), style = MaterialTheme.typography.labelMedium)
                     Switch(
                         checked = isSmoothingEnabled,
                         onCheckedChange = { viewModel.toggleSmoothing() },
@@ -253,7 +266,7 @@ fun ChartScreen(
                         )
                         Icon(
                             Icons.Default.ArrowDropDown,
-                            contentDescription = "Change Filter",
+                            contentDescription = stringResource(R.string.chart_change_filter),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -272,7 +285,9 @@ fun ChartScreen(
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
                 onRefresh = { viewModel.refresh() },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer(clip = false)
             ) {
                 AnimatedContent(
                     targetState = uiState,
@@ -288,15 +303,29 @@ fun ChartScreen(
                         is ChartState.Error -> ErrorState(message = state.message, onRetry = { viewModel.refresh() })
                         is ChartState.Empty -> EmptyState()
                         is ChartState.Success -> {
+                            var activeChartTitle by remember { mutableStateOf<String?>(null) }
+                            
                             LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer(clip = false),
                                 contentPadding = PaddingValues(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 items(state.charts) { bundle ->
+                                    val isActive = activeChartTitle == bundle.title
                                     ChartCard(
                                         bundle = bundle,
                                         isDailyRange = isDailyRange,
+                                        isActive = isActive,
+                                        onInteraction = { interacting ->
+                                            if (interacting) {
+                                                activeChartTitle = bundle.title
+                                            } else if (activeChartTitle == bundle.title) {
+                                                // Only clear if we are still the active one
+                                                activeChartTitle = null
+                                            }
+                                        },
                                         onFullscreen = { fullscreenChart = bundle }
                                     )
                                 }
@@ -324,12 +353,12 @@ fun ChartScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = fullscreenChart?.title ?: "Fullscreen Chart",
+                            text = fullscreenChart?.title ?: stringResource(R.string.chart_fullscreen_title),
                             style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.weight(1f).padding(start = 8.dp)
                         )
                         IconButton(onClick = { fullscreenChart = null }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.chart_close))
                         }
                     }
                     Box(modifier = Modifier.weight(1f).padding(16.dp)) {
@@ -366,13 +395,13 @@ fun ErrorState(message: String, onRetry: () -> Unit) {
     ) {
         Icon(
             imageVector = Icons.Default.Warning,
-            contentDescription = "Warning Indicator",
+            contentDescription = stringResource(R.string.chart_warning),
             modifier = Modifier.size(64.dp),
             tint = MaterialTheme.colorScheme.error
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = message, textAlign = TextAlign.Center)
-        TextButton(onClick = onRetry) { Text("Retry") }
+        TextButton(onClick = onRetry) { Text(stringResource(R.string.chart_retry)) }
     }
 }
 
@@ -385,12 +414,12 @@ fun EmptyState() {
     ) {
         Icon(
             imageVector = Icons.Default.Info,
-            contentDescription = "No Data Indicator",
+            contentDescription = stringResource(R.string.chart_no_data_desc),
             modifier = Modifier.size(64.dp),
             tint = MaterialTheme.colorScheme.secondary
         )
         Spacer(modifier = Modifier.height(16.dp))
-        Text(text = "No data available for the selected period", textAlign = TextAlign.Center)
+        Text(text = stringResource(R.string.chart_empty_data), textAlign = TextAlign.Center)
     }
 }
 @Composable
@@ -461,15 +490,21 @@ fun ChartScreenPreview() {
 fun ChartCard(
     bundle: ChartDataBundle,
     isDailyRange: Boolean,
+    isActive: Boolean = false,
+    onInteraction: (Boolean) -> Unit = {},
     onFullscreen: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(320.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            .height(320.dp)
+            .graphicsLayer(clip = false)
+            .zIndex(if (isActive) 10f else 0f),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isActive) 8.dp else 2.dp
+        )
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(modifier = Modifier.padding(8.dp).graphicsLayer(clip = false)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -487,12 +522,13 @@ fun ChartCard(
                     )
                 }
             }
-            Box(modifier = Modifier.weight(1f)) {
+            Box(modifier = Modifier.weight(1f).graphicsLayer(clip = false)) {
                 ThingSpeakLineChart(
                     lineData = bundle.lineData,
                     isDailyRange = isDailyRange,
                     baselineX = bundle.baselineX,
                     timeScale = bundle.timeScale,
+                    onInteraction = onInteraction,
                     modifier = Modifier.fillMaxSize()
                 )
             }

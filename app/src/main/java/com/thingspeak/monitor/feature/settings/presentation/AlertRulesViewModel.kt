@@ -61,10 +61,11 @@ class AlertRulesViewModel @Inject constructor(
         }
     }
 
-    fun updateRule(rule: AlertRuleEntity, newCondition: String, newThreshold: Double) {
+    fun updateRule(rule: AlertRuleEntity, newFieldNumber: Int, newCondition: String, newThreshold: Double) {
         viewModelScope.launch {
             alertRuleDao.updateRule(
                 rule.copy(
+                    fieldNumber = newFieldNumber,
                     condition = newCondition,
                     thresholdValue = newThreshold
                 )

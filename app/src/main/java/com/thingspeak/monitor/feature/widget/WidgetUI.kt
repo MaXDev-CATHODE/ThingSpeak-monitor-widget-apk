@@ -27,7 +27,10 @@ import androidx.glance.layout.size
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import androidx.glance.LocalSize
+import androidx.glance.appwidget.cornerRadius
 import androidx.compose.ui.graphics.Color
+
 import com.thingspeak.monitor.feature.channel.data.local.FeedEntryEntity
 import com.thingspeak.monitor.feature.widget.WidgetConfigActivity
 
@@ -50,7 +53,8 @@ data class WidgetData(
     val visibleFields: Set<Int>? = null,
     val chartBitmap: android.graphics.Bitmap? = null,
     val isRefreshing: Boolean = false,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val debugInfo: String = ""
 )
 
 @Composable
@@ -97,7 +101,7 @@ fun NoDataContent(context: Context, channelName: String = "") {
 }
 
 @Composable
-fun WidgetLoadingUI(context: Context) {
+fun WidgetLoadingUI(context: Context, debugInfo: String = "") {
     Box(
         modifier = GlanceModifier
             .fillMaxSize()
@@ -112,9 +116,21 @@ fun WidgetLoadingUI(context: Context) {
                 text = context.getString(R.string.widget_loading),
                 style = TextStyle(
                     color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
                 )
             )
+            if (debugInfo.isNotBlank()) {
+                Spacer(modifier = GlanceModifier.height(4.dp))
+                Text(
+                    text = "Status: $debugInfo",
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onSurfaceVariant,
+                        fontSize = 10.sp
+                    ),
+                    maxLines = 2
+                )
+            }
         }
     }
 }
@@ -150,7 +166,51 @@ fun WidgetErrorUI(context: Context, message: String) {
 }
 
 @Composable
+fun WidgetConfigReqUI(context: Context) {
+    GlanceTheme {
+        Box(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(GlanceTheme.colors.surface)
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                verticalAlignment = Alignment.CenterVertically) {
+                androidx.glance.Image(
+                    provider = androidx.glance.ImageProvider(android.R.drawable.ic_menu_preferences), // More appropriate system settings icon
+                    contentDescription = context.getString(R.string.widget_configure_title),
+                    modifier = GlanceModifier.size(48.dp),
+                    colorFilter = androidx.glance.ColorFilter.tint(GlanceTheme.colors.primary)
+                )
+                Spacer(modifier = GlanceModifier.height(8.dp))
+                Text(
+                    text = "No channel selected",
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onSurface,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+                Spacer(modifier = GlanceModifier.height(4.dp))
+                Text(
+                    text = "Tap 'CFG' to setup widget",
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun WidgetContent(context: Context, data: WidgetData) {
+    val size = LocalSize.current
+    val isSmallHeight = size.height.value < 120f
+    val isNarrow = size.width.value < 150f
+
     val isStale = data.entry?.let { 
         WidgetUtils.isDataStale(it.createdAt, data.syncIntervalMinutes * 60 * 1000L) 
     } ?: true
@@ -164,7 +224,7 @@ fun WidgetContent(context: Context, data: WidgetData) {
     val secondaryContentColor = if (isDarkBg) Color.LightGray else Color.DarkGray
 
     val bgColor = if (data.isGlass) {
-        androidx.glance.unit.ColorProvider(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.15f))
+        androidx.glance.unit.ColorProvider(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f))
     } else {
         androidx.glance.unit.ColorProvider(
             androidx.compose.ui.graphics.Color(baseColor).copy(alpha = data.transparency)
@@ -174,95 +234,103 @@ fun WidgetContent(context: Context, data: WidgetData) {
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .padding(12.dp)
-            .background(bgColor),
+            .padding(if (isSmallHeight) 4.dp else 12.dp)
+            .background(bgColor)
+            .cornerRadius(16.dp),
     ) {
+        // Header
         Row(
-            modifier = GlanceModifier.fillMaxWidth(),
+            modifier = GlanceModifier.fillMaxWidth().padding(bottom = if (isSmallHeight) 0.dp else 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = data.channelName,
-                style = TextStyle(
-                    color = androidx.glance.unit.ColorProvider(contentColor),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = (data.fontSize + 2).sp,
-                ),
-                modifier = GlanceModifier.defaultWeight(),
-            )
-
-            if (data.isRefreshing) {
+            if (!isNarrow || !isSmallHeight) {
                 Text(
-                    text = "...",
+                    text = data.channelName,
                     style = TextStyle(
                         color = androidx.glance.unit.ColorProvider(contentColor),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
+                        fontSize = (if (isSmallHeight) data.fontSize else data.fontSize + 2).sp,
+                    ),
+                    modifier = GlanceModifier.defaultWeight(),
+                    maxLines = 1
+                )
+            } else {
+                Spacer(modifier = GlanceModifier.defaultWeight())
+            }
+
+            if (data.isRefreshing) {
+                Text(
+                    text = "•••",
+                    style = TextStyle(
+                        color = androidx.glance.unit.ColorProvider(contentColor),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
                     ),
                     modifier = GlanceModifier.padding(horizontal = 4.dp)
                 )
             }
             
-            if (data.lastSyncStatus.startsWith("ERROR")) {
+            val buttonBg = if (isDarkBg) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.1f)
+
+            Box(
+                modifier = GlanceModifier
+                    .padding(horizontal = 2.dp)
+                    .background(buttonBg)
+                    .cornerRadius(8.dp)
+                    .clickable(actionRunCallback<RefreshAction>()),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
-                    text = "!",
+                    text = "REF",
                     style = TextStyle(
-                        color = androidx.glance.unit.ColorProvider(androidx.compose.ui.graphics.Color.Red),
+                        color = androidx.glance.unit.ColorProvider(contentColor),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        fontSize = 10.sp,
                     ),
-                    modifier = GlanceModifier.padding(horizontal = 8.dp)
+                    modifier = GlanceModifier.padding(horizontal = 6.dp, vertical = 4.dp)
                 )
             }
 
-            Text(
-                text = context.getString(R.string.widget_action_refresh),
-                style = TextStyle(
-                    color = GlanceTheme.colors.primary,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 11.sp,
-                ),
+            Box(
                 modifier = GlanceModifier
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                    .background(GlanceTheme.colors.primaryContainer)
-                    .clickable(actionRunCallback<RefreshAction>()),
-            )
-
-            Spacer(modifier = GlanceModifier.width(4.dp))
-
-            Text(
-                text = context.getString(R.string.widget_action_edit),
-                style = TextStyle(
-                    color = GlanceTheme.colors.secondary,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 11.sp,
-                ),
-                modifier = GlanceModifier
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                    .background(GlanceTheme.colors.secondaryContainer)
+                    .padding(horizontal = 2.dp)
+                    .background(buttonBg)
+                    .cornerRadius(8.dp)
                     .clickable(androidx.glance.appwidget.action.actionRunCallback<EditAction>()),
-            )
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "CFG",
+                    style = TextStyle(
+                        color = androidx.glance.unit.ColorProvider(contentColor),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp,
+                    ),
+                    modifier = GlanceModifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                )
+            }
         }
 
         Spacer(modifier = GlanceModifier.height(6.dp))
 
         if (data.entry != null) {
-            // Flattened list to avoid deep nesting
-            Column {
-                (1..8).forEach { index ->
-                    if (data.visibleFields == null || data.visibleFields.contains(index)) {
-                        val name = data.fieldNames[index]?.takeIf { it.isNotBlank() } ?: "Field $index"
-                        val value = when(index) {
-                            1 -> data.entry.field1
-                            2 -> data.entry.field2
-                            3 -> data.entry.field3
-                            4 -> data.entry.field4
-                            5 -> data.entry.field5
-                            6 -> data.entry.field6
-                            7 -> data.entry.field7
-                            8 -> data.entry.field8
-                            else -> null
-                        }
+            // Field list wrapped in weight to allow chart to breathe
+            Box(modifier = GlanceModifier.defaultWeight()) {
+                Column {
+                    (1..8).forEach { index ->
+                        if (data.visibleFields == null || data.visibleFields.contains(index)) {
+                            val name = data.fieldNames[index]?.takeIf { it.isNotBlank() } ?: context.getString(R.string.widget_field_name, index)
+                            val value = when(index) {
+                                1 -> data.entry.field1
+                                2 -> data.entry.field2
+                                3 -> data.entry.field3
+                                4 -> data.entry.field4
+                                5 -> data.entry.field5
+                                6 -> data.entry.field6
+                                7 -> data.entry.field7
+                                8 -> data.entry.field8
+                                else -> null
+                            }
                             if (value != null) {
                                 FieldRow(
                                     label = name, 
@@ -276,30 +344,29 @@ fun WidgetContent(context: Context, data: WidgetData) {
                         }
                     }
                 }
-
+            }
         } else {
-            Text(
-                text = context.getString(com.thingspeak.monitor.R.string.chart_empty_data),
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant),
-            )
+            Box(modifier = GlanceModifier.defaultWeight()) {
+                Text(
+                    text = context.getString(com.thingspeak.monitor.R.string.chart_empty_data),
+                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant),
+                )
+            }
         }
 
         if (data.entry != null && data.chartBitmap != null) {
+            android.util.Log.d("AUDIT_V11", "SmallWidget [UI_CHART] rendering bitmap: ${data.chartBitmap.width}x${data.chartBitmap.height}")
             Spacer(modifier = GlanceModifier.height(8.dp))
             androidx.glance.Image(
                 provider = androidx.glance.ImageProvider(data.chartBitmap),
                 contentDescription = context.getString(R.string.widget_content_chart),
-                modifier = GlanceModifier
-                    .fillMaxWidth()
-                    .height(80.dp),
+                modifier = GlanceModifier.fillMaxWidth().height(84.dp),
                 contentScale = androidx.glance.layout.ContentScale.FillBounds
             )
         }
 
-        Spacer(modifier = GlanceModifier.defaultWeight())
-
-        val timestampText = data.entry?.let { WidgetUtils.formatRelativeTime(it.createdAt) } ?: "—"
-        val localSyncText = if (data.lastSyncTime > 0) WidgetUtils.formatTime(data.lastSyncTime) else "—"
+        val timestampText = data.entry?.let { WidgetUtils.formatRelativeTime(context, it.createdAt) } ?: "—"
+        val localSyncText = if (data.lastSyncTime > 0) WidgetUtils.formatTime(context, data.lastSyncTime) else "—"
 
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
@@ -307,17 +374,14 @@ fun WidgetContent(context: Context, data: WidgetData) {
         ) {
             Column(modifier = GlanceModifier.defaultWeight()) {
                 Text(
-                    text = context.getString(
-                        com.thingspeak.monitor.R.string.widget_last_updated,
-                        timestampText,
-                    ),
+                    text = "Data from: $timestampText",
                     style = TextStyle(
                         color = androidx.glance.unit.ColorProvider(secondaryContentColor),
                         fontSize = 11.sp,
                     ),
                 )
                 Text(
-                    text = context.getString(R.string.widget_sync_prefix, localSyncText),
+                    text = "Synced: $localSyncText",
                     style = TextStyle(
                         color = androidx.glance.unit.ColorProvider(secondaryContentColor),
                         fontSize = 10.sp,
@@ -347,6 +411,9 @@ fun FieldRow(
     textColor: Color,
     labelColor: Color
 ) {
+    val size = LocalSize.current
+    val isNarrow = size.width.value < 120f
+
     Row(
         modifier = GlanceModifier.fillMaxWidth().padding(vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -358,16 +425,18 @@ fun FieldRow(
                 fontSize = fontSize.sp,
             ),
             modifier = GlanceModifier.defaultWeight(),
+            maxLines = 1
         )
         Text(
             text = value ?: "—",
             style = TextStyle(
                 color = if (hasAlert) androidx.glance.unit.ColorProvider(Color.Red) 
                         else androidx.glance.unit.ColorProvider(textColor),
-                fontWeight = FontWeight.Medium,
-                fontSize = (fontSize + 1).sp,
+                fontWeight = FontWeight.Bold,
+                fontSize = (if (isNarrow) fontSize else fontSize + 2).sp,
             ),
-            modifier = GlanceModifier.defaultWeight(),
+            modifier = if (isNarrow) GlanceModifier.padding(start = 4.dp) else GlanceModifier.defaultWeight(),
+            maxLines = 1
         )
         if (hasAlert) {
             Spacer(modifier = GlanceModifier.width(4.dp))

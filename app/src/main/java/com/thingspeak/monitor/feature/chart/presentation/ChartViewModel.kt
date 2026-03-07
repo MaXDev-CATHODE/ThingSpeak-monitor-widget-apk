@@ -103,11 +103,11 @@ class ChartViewModel @Inject constructor(
         )
 
     val channelName: StateFlow<String> = channelData
-        .map { it?.name ?: "Channel $channelId" }
+        .map { it?.name ?: "Channel ${it?.id ?: channelId}" }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = "Loading..."
+            initialValue = ""
         )
 
     init {
@@ -182,20 +182,40 @@ class ChartViewModel @Inject constructor(
             _isDailyRange.value = days <= 1
 
             val currentRange = _customDateRange.value
-            val endInstant = currentRange?.second ?: Instant.now()
-            val startInstant = currentRange?.first ?: endInstant.minus(days.toLong(), ChronoUnit.DAYS)
             
-            val startStr = startInstant.toString()
-            val endStr = endInstant.toString()
+            // Strategy: For predefined ranges (1D, 7D, 30D), fetch the latest 8000 entries 
+            // without hard start/end filters or server-side average math (which causes API Timeouts).
+            // We rely on local LTTB downsampling to filter points.
             
-            val average = when (days) {
-                7 -> 60
-                30 -> 1440
-                else -> null
+            data class ApiParams(val start: String?, val end: String?, val results: Int, val days: Int?, val average: Int?)
+            val params = if (customRange != null || currentRange != null) {
+                val actualRange = customRange ?: currentRange!!
+                val startStr = actualRange.first.atOffset(java.time.ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"))
+                val endStr = actualRange.second.atOffset(java.time.ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"))
+                android.util.Log.d("ChartViewModel", "Loading custom range: $startStr to $endStr")
+                ApiParams(startStr, endStr, 8000, null, null)
+            } else {
+                val resultsParam = if (days > 1) 8000 else 300 // Max entries for 7D/30D
+                android.util.Log.d("ChartViewModel", "Loading predefined range: days=$days, results=$resultsParam")
+                // CRITICAL FIX: Pass `null` for days to strictly use indexed `results` scan on ThingSpeak Backend!
+                ApiParams(null, null, resultsParam, null, null)
             }
 
-            when (val result = getHistoricalDataUseCase(channelId, apiKey, startStr, endStr, average)) {
+            val startTime = System.currentTimeMillis()
+            android.util.Log.d("ChartViewModel", "API Req: days=${params.days}, start=${params.start}, avg=${params.average}, results=${params.results}")
+
+            when (val result = getHistoricalDataUseCase(
+                channelId = channelId, 
+                apiKey = apiKey, 
+                start = params.start, 
+                end = params.end, 
+                average = params.average, 
+                results = params.results,
+                days = params.days
+            )) {
                 is ApiResult.Success -> {
+                    val apiTime = System.currentTimeMillis() - startTime
+                    android.util.Log.d("ChartViewModel", "Loaded ${result.data.size} entries in ${apiTime}ms")
                     processChartData(result.data)
                 }
                 is ApiResult.Error -> {
@@ -226,114 +246,153 @@ class ChartViewModel @Inject constructor(
             return
         }
 
+        val isDaily = _isDailyRange.value
+        val processStartTime = System.currentTimeMillis()
+        
         val result = withContext(defaultDispatcher) {
              val dataSetsMap = mutableMapOf<Int, MutableList<Entry>>()
              
-             // Step 1: Find baseline (minimum timestamp) for all points to preserve Float precision
+             val nowEpoch = Instant.now().epochSecond
+             val oneHourIntoFuture = nowEpoch + 3600
+             val twentyFourHoursAgo = nowEpoch - (24 * 3600)
+             val selectedFieldsSet = _selectedFields.value
+
+             // Single pass to get everything we need
              var minTimestamp = Long.MAX_VALUE
              var maxTimestamp = Long.MIN_VALUE
+             var latestEntryTs = 0L
+             
+             val entriesWithTs = mutableListOf<Pair<com.thingspeak.monitor.feature.channel.domain.model.FeedEntry, Long>>()
              
              entries.forEach { feed ->
                  try {
-                     val ts = Instant.parse(feed.createdAt).epochSecond
-                     if (ts < minTimestamp) minTimestamp = ts
-                     if (ts > maxTimestamp) maxTimestamp = ts
+                     // PERFORMANCE: Fast ISO8601 parser for "2024-10-23T14:35:05Z" to avoid Instant.parse GC churn
+                     val dateStr = feed.createdAt
+                     val ts = if (dateStr.length >= 19 && dateStr[4] == '-' && dateStr[10] == 'T') {
+                         val year = (dateStr[0] - '0') * 1000 + (dateStr[1] - '0') * 100 + (dateStr[2] - '0') * 10 + (dateStr[3] - '0')
+                         val month = (dateStr[5] - '0') * 10 + (dateStr[6] - '0')
+                         val day = (dateStr[8] - '0') * 10 + (dateStr[9] - '0')
+                         val hour = (dateStr[11] - '0') * 10 + (dateStr[12] - '0')
+                         val minute = (dateStr[14] - '0') * 10 + (dateStr[15] - '0')
+                         val second = (dateStr[17] - '0') * 10 + (dateStr[18] - '0')
+                         java.time.LocalDateTime.of(year, month, day, hour, minute, second)
+                             .toEpochSecond(java.time.ZoneOffset.UTC)
+                     } else {
+                         Instant.parse(dateStr).epochSecond
+                     }
+                     
+                     if (ts <= oneHourIntoFuture) {
+                         if (ts > latestEntryTs) latestEntryTs = ts
+                     }
+                     entriesWithTs.add(feed to ts)
                  } catch (e: Exception) { /* skip */ }
              }
+
+             if (entriesWithTs.isEmpty()) return@withContext null
+
+             val daysSpan = _currentRangeDays.value
+             val customRange = _customDateRange.value
              
+             val effectiveStartTs = if (customRange != null) {
+                 customRange.first.epochSecond
+             } else if (daysSpan != null && daysSpan > 0) {
+                 val spanSeconds = daysSpan * 24L * 3600L
+                 val threshold = java.time.Instant.now().epochSecond - spanSeconds
+                 // If channel is stale, show last `days` of its activity. Else, exactly from threshold.
+                 if (latestEntryTs > threshold) threshold else (latestEntryTs - spanSeconds)
+             } else 0L
+
+             // Single pass filtering and boundary detection
+             val validEntriesWithTs = ArrayList<Pair<com.thingspeak.monitor.feature.channel.domain.model.FeedEntry, Long>>(entriesWithTs.size)
+             for (i in 0 until entriesWithTs.size) {
+                 val pair = entriesWithTs[i]
+                 val ts = pair.second
+                 if (ts > oneHourIntoFuture) continue
+                 
+                 // Apply local filtering for ALL predefined ranges (1D, 7D, 30D) since we fetch max 8000 results raw.
+                 if (effectiveStartTs > 0L && ts < effectiveStartTs) continue
+                 // Apply end boundary for custom range
+                 if (customRange != null && ts > customRange.second.epochSecond) continue
+                 
+                 if (ts < minTimestamp) minTimestamp = ts
+                 if (ts > maxTimestamp) maxTimestamp = ts
+                 validEntriesWithTs.add(pair)
+             }
+
              if (minTimestamp == Long.MAX_VALUE) return@withContext null
+
              val baselineX = minTimestamp
              val rangeSeconds = maxTimestamp - minTimestamp
-             
-             // If range exceeds Float precision limit (16.7M seconds), use minutes (factor 60)
-             // This preserves precision for up to ~30 years (16.7M * 60 seconds)
              val timeScale = if (rangeSeconds > 10_000_000) 60f else 1f
 
-             entries.forEach { feed ->
-                 val timestampStr = feed.createdAt
-                 val timestampLong = try {
-                     Instant.parse(timestampStr).epochSecond
-                 } catch (e: Exception) {
-                     return@forEach
-                 }
-                 
-                  // Use offset from baseline and apply scale to maintain high precision
-                  val xValue = (timestampLong - baselineX).toFloat() / timeScale
-
-                 feed.fields.forEach { (fieldIndex, valueStr) ->
-                     if (_selectedFields.value.contains(fieldIndex)) {
-                         val valueFloat = safeToFloat(valueStr)
-                         if (valueFloat != null && !valueFloat.isNaN()) {
-                             val list = dataSetsMap.getOrPut(fieldIndex) { mutableListOf() }
-                             list.add(Entry(xValue, valueFloat))
-                         }
-                     }
-                 }
+             // Single pass mapping - avoiding forEach and iterator allocations
+             for (i in 0 until validEntriesWithTs.size) {
+                  val pair = validEntriesWithTs[i]
+                  val feed = pair.first
+                  val ts = pair.second
+                  val xValue = (ts - baselineX).toFloat() / timeScale
+                  
+                  for ((fieldIndex, valueStr) in feed.fields) {
+                      if (selectedFieldsSet.contains(fieldIndex)) {
+                          // PERFORMANCE: Use raw String parsing instead of reflection
+                          val valueFloat = valueStr?.trim()?.toFloatOrNull()
+                          if (valueFloat != null && !valueFloat.isNaN()) {
+                              dataSetsMap.getOrPut(fieldIndex) { ArrayList() }.add(Entry(xValue, valueFloat))
+                          }
+                      }
+                  }
              }
 
-             if (dataSetsMap.isEmpty()) {
-                 return@withContext null
-             }
+             if (dataSetsMap.isEmpty()) return@withContext null
 
              val colors = listOf(
-                 android.graphics.Color.parseColor("#E53935"), // Red
-                 android.graphics.Color.parseColor("#1E88E5"), // Blue
-                 android.graphics.Color.parseColor("#43A047"), // Green
-                 android.graphics.Color.parseColor("#FDD835"), // Yellow
-                 android.graphics.Color.parseColor("#8E24AA"), // Purple
-                 android.graphics.Color.parseColor("#F4511E"), // Deep Orange
-                 android.graphics.Color.parseColor("#00ACC1"), // Cyan
-                 android.graphics.Color.parseColor("#7CB342")  // Light Green
+                 android.graphics.Color.parseColor("#E53935"), android.graphics.Color.parseColor("#1E88E5"),
+                 android.graphics.Color.parseColor("#43A047"), android.graphics.Color.parseColor("#FDD835"),
+                 android.graphics.Color.parseColor("#8E24AA"), android.graphics.Color.parseColor("#F4511E"),
+                 android.graphics.Color.parseColor("#00ACC1"), android.graphics.Color.parseColor("#7CB342")
              )
 
              val merging = _isMergingEnabled.value
+             val smoothing = _isSmoothingEnabled.value
+             val filter = _dataFilter.value
              
+             // Process into DataSets - REMOVED redundant sortedBy (ThingSpeak is already sorted)
              if (merging) {
-                 // MERGED MODE: One LineData with multiple DataSets
                  val dataSets = dataSetsMap.entries.mapIndexed { index, mapEntry ->
                      val fieldIndex = mapEntry.key
-                     val sortedEntries = mapEntry.value.sortedBy { it.x }
-                     val filteredEntries = applyFilter(sortedEntries, _dataFilter.value)
-                     val smoothedEntries = if (_isSmoothingEnabled.value) MathUtils.applyMovingAverage(filteredEntries, 5) else filteredEntries
+                     val filteredEntries = applyFilter(mapEntry.value, filter)
+                     val smoothedEntries = if (smoothing) MathUtils.applyMovingAverage(filteredEntries, 5) else filteredEntries
                      val points = if (smoothedEntries.size > 200) com.thingspeak.monitor.core.utils.ChartUtils.downsampleLTTB(smoothedEntries, 200) else smoothedEntries
 
                      val label = fieldNames.value[fieldIndex] ?: "Field $fieldIndex"
                      LineDataSet(points, label).apply {
-                         mode = LineDataSet.Mode.LINEAR // CLEANER LOOK
-                         setDrawCircles(false)
-                         setDrawValues(false)
-                         lineWidth = 2.5f
-                         color = colors[index % colors.size]
-                         highLightColor = colors[index % colors.size]
+                         mode = LineDataSet.Mode.LINEAR; setDrawCircles(false); setDrawValues(false)
+                         lineWidth = 2.5f; color = colors[index % colors.size]; highLightColor = colors[index % colors.size]
                      }
                  }
                  listOf(ChartDataBundle(LineData(dataSets), baselineX, timeScale, "Merged Fields"))
              } else {
-                 // SEPARATE MODE: List of LineData bundles, each with one DataSet
                  dataSetsMap.entries.mapIndexed { index, mapEntry ->
                      val fieldIndex = mapEntry.key
-                     val sortedEntries = mapEntry.value.sortedBy { it.x }
-                     val filteredEntries = applyFilter(sortedEntries, _dataFilter.value)
-                     val smoothedEntries = if (_isSmoothingEnabled.value) MathUtils.applyMovingAverage(filteredEntries, 5) else filteredEntries
+                     val filteredEntries = applyFilter(mapEntry.value, filter)
+                     val smoothedEntries = if (smoothing) MathUtils.applyMovingAverage(filteredEntries, 5) else filteredEntries
                      val points = if (smoothedEntries.size > 200) com.thingspeak.monitor.core.utils.ChartUtils.downsampleLTTB(smoothedEntries, 200) else smoothedEntries
 
                      val label = fieldNames.value[fieldIndex] ?: "Field $fieldIndex"
                      val dataSet = LineDataSet(points, label).apply {
-                         mode = LineDataSet.Mode.LINEAR // CLEANER LOOK
-                         setDrawCircles(false)
-                         setDrawValues(false)
-                         lineWidth = 2.5f
-                         color = colors[index % colors.size]
-                         highLightColor = colors[index % colors.size]
+                         mode = LineDataSet.Mode.LINEAR; setDrawCircles(false); setDrawValues(false)
+                         lineWidth = 2.5f; color = colors[index % colors.size]; highLightColor = colors[index % colors.size]
                      }
                      ChartDataBundle(LineData(dataSet), baselineX, timeScale, label)
                  }
              }
-        }
+         }
  
-        if (result != null) {
-            _uiState.value = ChartState.Success(result, _isMergingEnabled.value)
-        } else {
+         if (result != null) {
+             val totalProcessTime = System.currentTimeMillis() - processStartTime
+             android.util.Log.d("ChartViewModel", "Data processing completed in ${totalProcessTime}ms")
+             _uiState.value = ChartState.Success(result, _isMergingEnabled.value)
+         } else {
             _uiState.value = ChartState.Empty
         }
     }

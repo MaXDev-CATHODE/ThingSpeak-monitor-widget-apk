@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:name=".ThingSpeakApp"
@@ -35,6 +38,7 @@
         <!-- Widget Receiver -->
         <receiver
             android:name=".feature.widget.WidgetReceiver"
+            android:label="@string/widget_name_glance"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -70,6 +74,7 @@
         <!-- Value Grid Widget Receiver -->
         <receiver
             android:name=".feature.widget.ValueGridWidgetReceiver"
+            android:label="@string/widget_name_grid"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -101,5 +106,12 @@
                 android:authorities="${applicationId}"
                 tools:node="remove" />
         </provider>
+
+        <service
+            android:name=".core.worker.DataSyncService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 </manifest>

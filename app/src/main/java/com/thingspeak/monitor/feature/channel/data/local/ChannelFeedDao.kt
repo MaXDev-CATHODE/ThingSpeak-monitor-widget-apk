@@ -22,6 +22,18 @@ interface ChannelFeedDao {
     fun observeFeedEntries(channelId: Long): Flow<List<FeedEntryEntity>>
 
     /**
+     * V10: Limit data for chart widgets to prevent SLOW loading.
+     */
+    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId ORDER BY entryId DESC LIMIT :limit")
+    fun observeLatestFeedEntries(channelId: Long, limit: Int): Flow<List<FeedEntryEntity>>
+
+    /**
+     * V10: Super fast for ValueGridWidget which only needs one entry.
+     */
+    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId ORDER BY entryId DESC LIMIT 1")
+    fun observeLastEntry(channelId: Long): Flow<List<FeedEntryEntity>>
+
+    /**
      * Inserts a list of entries into the database. Overwrites on conflict.
      */
     @Transaction

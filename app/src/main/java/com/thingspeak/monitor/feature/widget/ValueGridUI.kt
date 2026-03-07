@@ -7,29 +7,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
-import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.background
-import androidx.glance.layout.Alignment
-import androidx.glance.layout.Box
-import androidx.glance.layout.Column
-import androidx.glance.layout.Row
-import androidx.glance.layout.Spacer
-import androidx.glance.layout.fillMaxHeight
-import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.fillMaxWidth
-import androidx.glance.layout.height
-import androidx.glance.layout.padding
-import androidx.glance.layout.width
+import androidx.glance.layout.*
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.unit.ColorProvider
+import androidx.glance.LocalSize
+import androidx.glance.appwidget.cornerRadius
+import androidx.glance.layout.ContentScale
 import androidx.glance.text.TextStyle
-import com.thingspeak.monitor.MainActivity
-import com.thingspeak.monitor.R
 
 @Composable
 fun ValueGridContent(context: Context, data: WidgetData) {
+    val size = LocalSize.current
+    val isSmallHeight = size.height < 120.dp
+    
     val isStale = data.entry?.let { 
         WidgetUtils.isDataStale(it.createdAt, data.syncIntervalMinutes * 60 * 1000L) 
     } ?: true
@@ -39,75 +33,99 @@ fun ValueGridContent(context: Context, data: WidgetData) {
     } ?: android.graphics.Color.WHITE
 
     val isDarkBg = isColorDark(baseColor)
-    
-    // Improved color logic: don't force Black for Glass if the intention was Dark theme
-    val contentColor = if (isDarkBg) Color.White else Color.Black
-    val secondaryContentColor = if (isDarkBg) Color.LightGray else Color.DarkGray
+    val contentColorVal = if (isDarkBg) Color.White else Color.Black
+    val secondaryContentColorVal = if (isDarkBg) Color.LightGray else Color.DarkGray
 
-    android.util.Log.d("ValueGridUI", "Rendering ${data.channelName} (ID: ${data.channelId}) " + 
-        "| Glass: ${data.isGlass} | isDarkBg: $isDarkBg | contentColor: $contentColor")
-    
-    // Background handling (Glassmorphism or solid)
     val bgColor = if (data.isGlass) {
-        androidx.glance.unit.ColorProvider(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.15f))
+        ColorProvider(Color.White.copy(alpha = 0.12f))
     } else {
-        androidx.glance.unit.ColorProvider(
-            androidx.compose.ui.graphics.Color(baseColor).copy(alpha = data.transparency)
-        )
+        ColorProvider(Color(baseColor))
     }
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .padding(8.dp)
-            .background(bgColor),
+            .padding(if (isSmallHeight) 4.dp else 8.dp)
+            .background(bgColor)
+            .cornerRadius(16.dp),
     ) {
-        // TOP HEADER
+        // Nagłówek - bardziej kompaktowy w małych widżetach
         Row(
-            modifier = GlanceModifier.fillMaxWidth().padding(horizontal = 4.dp),
+            modifier = GlanceModifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = if (isSmallHeight) 0.dp else 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = data.channelName,
-                style = TextStyle(
-                    color = androidx.glance.unit.ColorProvider(contentColor),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                ),
-                modifier = GlanceModifier.defaultWeight(),
-            )
+            if (!isSmallHeight || size.width > 150.dp) {
+                Text(
+                    text = data.channelName,
+                    style = TextStyle(
+                        color = ColorProvider(contentColorVal),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = if (isSmallHeight) 11.sp else 14.sp,
+                    ),
+                    modifier = GlanceModifier.defaultWeight(),
+                    maxLines = 1
+                )
+            } else {
+                Spacer(modifier = GlanceModifier.defaultWeight())
+            }
             
             if (data.isRefreshing) {
                 Text(
-                    text = "...",
-                    style = TextStyle(color = androidx.glance.unit.ColorProvider(contentColor), fontSize = 14.sp),
+                    text = "•••",
+                    style = TextStyle(color = ColorProvider(contentColorVal), fontSize = 12.sp, fontWeight = FontWeight.Bold),
                     modifier = GlanceModifier.padding(horizontal = 4.dp)
                 )
             }
-            if (isStale) {
-                Box(modifier = GlanceModifier.width(8.dp).height(8.dp).background(Color.Red)) {}
-                Spacer(modifier = GlanceModifier.width(4.dp))
-            }
             
-            Text(
-                text = "↻",
-                style = TextStyle(color = GlanceTheme.colors.primary, fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                modifier = GlanceModifier.padding(horizontal = 4.dp).clickable(actionRunCallback<GridRefreshAction>())
-            )
-            Text(
-                text = "⚙",
-                style = TextStyle(color = GlanceTheme.colors.secondary, fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                modifier = GlanceModifier.padding(horizontal = 4.dp).clickable(actionRunCallback<GridEditAction>())
-            )
+            // Buttons with premium look
+            val buttonBg = if (isDarkBg) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.1f)
+            
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = GlanceModifier
+                        .padding(horizontal = 2.dp)
+                        .background(buttonBg)
+                        .cornerRadius(8.dp)
+                        .clickable(actionRunCallback<GridRefreshAction>()),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "REF",
+                        style = TextStyle(
+                            color = ColorProvider(contentColorVal),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        ),
+                        modifier = GlanceModifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                    )
+                }
+                
+                Box(
+                    modifier = GlanceModifier
+                        .padding(horizontal = 2.dp)
+                        .background(buttonBg)
+                        .cornerRadius(8.dp)
+                        .clickable(actionRunCallback<GridEditAction>()),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "CFG",
+                        style = TextStyle(
+                            color = ColorProvider(contentColorVal),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        ),
+                        modifier = GlanceModifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                    )
+                }
+            }
         }
         
         Spacer(modifier = GlanceModifier.height(8.dp))
 
-        // GRID CONTENT
         if (data.entry != null) {
-            // If no visible fields defined, auto-scan all 8 for data, but limit to 4 for grid
-            val visibleList = data.visibleFields?.toList()?.sorted() ?: (1..8).filter { index ->
-                val value = when(index) {
+            val visibleList = data.visibleFields?.toList()?.sorted() ?: (1..8).filter { idx ->
+                val fieldVal = when(idx) {
                     1 -> data.entry.field1
                     2 -> data.entry.field2
                     3 -> data.entry.field3
@@ -118,75 +136,169 @@ fun ValueGridContent(context: Context, data: WidgetData) {
                     8 -> data.entry.field8
                     else -> null
                 }
-                value != null
+                fieldVal != null
             }
-            val fieldsToRender = visibleList.take(4) // Max 4 fields for grid layout
+            val fieldsToRender = visibleList.take(4)
             
-            android.util.Log.d("ValueGridUI", "Grid content start. Fields to render: $fieldsToRender")
-            
-            // Use defaultWeight() to take remaining space after header, avoiding fillMaxSize overlap
-            Column(modifier = GlanceModifier.defaultWeight().fillMaxWidth()) {
-                if (fieldsToRender.size <= 2) {
-                    android.util.Log.d("ValueGridUI", "Creating Row 2x1")
-                    Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
-                        for (index in fieldsToRender) {
-                            android.util.Log.d("ValueGridUI", "Rendering tile in 2x1 row: index $index")
+            Column(
+                modifier = GlanceModifier.defaultWeight().fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val totalFields = fieldsToRender.size
+                // Uniform gap = 4dp between tiles in both axes
+                val halfGap = 8.dp
+                
+                when (totalFields) {
+                    1 -> {
+                        ValueTile(
+                            modifier = GlanceModifier.defaultWeight().fillMaxWidth().padding(4.dp),
+                            index = fieldsToRender[0], 
+                            data = data, 
+                            contentColor = contentColorVal, 
+                            secondaryColor = secondaryContentColorVal, 
+                            baseColor = baseColor,
+                            tileCount = 1
+                        )
+                    }
+                    2 -> {
+                        Row(
+                            modifier = GlanceModifier.defaultWeight().fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             ValueTile(
-                                modifier = GlanceModifier.defaultWeight().fillMaxHeight().padding(3.dp),
-                                index = index, 
+                                modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+                                index = fieldsToRender[0], 
                                 data = data, 
-                                contentColor = contentColor, 
-                                secondaryColor = secondaryContentColor, 
-                                baseColor = baseColor
+                                contentColor = contentColorVal, 
+                                secondaryColor = secondaryContentColorVal, 
+                                baseColor = baseColor,
+                                tileCount = 2
                             )
-                        }
-                        // If only 1 field, add spacer to keep it to the left
-                        if (fieldsToRender.size == 1) {
-                            Spacer(modifier = GlanceModifier.defaultWeight())
+                            Spacer(modifier = GlanceModifier.width(12.dp))
+                            ValueTile(
+                                modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+                                index = fieldsToRender[1], 
+                                data = data, 
+                                contentColor = contentColorVal, 
+                                secondaryColor = secondaryContentColorVal, 
+                                baseColor = baseColor,
+                                tileCount = 2
+                            )
                         }
                     }
-                } else {
-                    val firstRowFields = fieldsToRender.take(2)
-                    val secondRowFields = fieldsToRender.drop(2)
-                    
-                    android.util.Log.d("ValueGridUI", "Creating 2x2: Row1=$firstRowFields, Row2=$secondRowFields")
-                    
-                    Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
-                        for (index in firstRowFields) {
-                            android.util.Log.d("ValueGridUI", "Rendering tile in 2x2 row 1: index $index")
+                    3 -> {
+                        // Top row: 2 tiles
+                        Row(
+                            modifier = GlanceModifier.defaultWeight().fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             ValueTile(
-                                modifier = GlanceModifier.defaultWeight().fillMaxHeight().padding(3.dp),
-                                index = index, 
+                                modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+                                index = fieldsToRender[0], 
                                 data = data, 
-                                contentColor = contentColor, 
-                                secondaryColor = secondaryContentColor, 
-                                baseColor = baseColor
+                                contentColor = contentColorVal, 
+                                secondaryColor = secondaryContentColorVal, 
+                                baseColor = baseColor,
+                                tileCount = 3
+                            )
+                            Spacer(modifier = GlanceModifier.width(12.dp))
+                            ValueTile(
+                                modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+                                index = fieldsToRender[1], 
+                                data = data, 
+                                contentColor = contentColorVal, 
+                                secondaryColor = secondaryContentColorVal, 
+                                baseColor = baseColor,
+                                tileCount = 3
+                            )
+                        }
+                        
+                        Spacer(modifier = GlanceModifier.height(8.dp))
+
+                        // Bottom row: 1 full-width tile
+                        Row(
+                            modifier = GlanceModifier.defaultWeight().fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ValueTile(
+                                modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+                                index = fieldsToRender[2], 
+                                data = data, 
+                                contentColor = contentColorVal, 
+                                secondaryColor = secondaryContentColorVal, 
+                                baseColor = baseColor,
+                                tileCount = 3
                             )
                         }
                     }
-                    Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
-                        for (index in secondRowFields) {
-                            android.util.Log.d("ValueGridUI", "Rendering tile in 2x2 row 2: index $index")
+                    else -> {
+                        // 4 tiles: 2x2 grid with uniform 4dp gaps
+                        // Top row
+                        Row(
+                            modifier = GlanceModifier.defaultWeight().fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             ValueTile(
-                                modifier = GlanceModifier.defaultWeight().fillMaxHeight().padding(3.dp),
-                                index = index, 
+                                modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+                                index = fieldsToRender[0], 
                                 data = data, 
-                                contentColor = contentColor, 
-                                secondaryColor = secondaryContentColor, 
-                                baseColor = baseColor
+                                contentColor = contentColorVal, 
+                                secondaryColor = secondaryContentColorVal, 
+                                baseColor = baseColor,
+                                tileCount = 4
+                            )
+                            Spacer(modifier = GlanceModifier.width(12.dp))
+                            ValueTile(
+                                modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+                                index = fieldsToRender[1], 
+                                data = data, 
+                                contentColor = contentColorVal, 
+                                secondaryColor = secondaryContentColorVal, 
+                                baseColor = baseColor,
+                                tileCount = 4
                             )
                         }
-                        // Handle odd number of fields in the second row (if user chose 3 fields)
-                        if (secondRowFields.size == 1) {
-                            Spacer(modifier = GlanceModifier.defaultWeight())
+                        
+                        Spacer(modifier = GlanceModifier.height(8.dp))
+
+                        // Bottom row
+                        Row(
+                            modifier = GlanceModifier.defaultWeight().fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ValueTile(
+                                modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+                                index = fieldsToRender[2], 
+                                data = data, 
+                                contentColor = contentColorVal, 
+                                secondaryColor = secondaryContentColorVal, 
+                                baseColor = baseColor,
+                                tileCount = 4
+                            )
+                            Spacer(modifier = GlanceModifier.width(12.dp))
+                            ValueTile(
+                                modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+                                index = fieldsToRender[3], 
+                                data = data, 
+                                contentColor = contentColorVal, 
+                                secondaryColor = secondaryContentColorVal, 
+                                baseColor = baseColor,
+                                tileCount = 4
+                            )
                         }
                     }
                 }
             }
         } else {
             Text(
-                text = context.getString(com.thingspeak.monitor.R.string.chart_empty_data),
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant),
+                text = "No data",
+                style = androidx.glance.text.TextStyle(color = GlanceTheme.colors.onSurfaceVariant),
             )
         }
     }
@@ -199,10 +311,11 @@ fun ValueTile(
     data: WidgetData, 
     contentColor: Color, 
     secondaryColor: Color, 
-    baseColor: Int
+    baseColor: Int,
+    tileCount: Int
 ) {
     val name = data.fieldNames[index]?.takeIf { it.isNotBlank() } ?: "Field $index"
-    val value = when(index) {
+    val tileValue = when(index) {
         1 -> data.entry?.field1
         2 -> data.entry?.field2
         3 -> data.entry?.field3
@@ -216,43 +329,46 @@ fun ValueTile(
 
     val hasAlert = data.activeAlertFields.contains(index)
     val tileValueColor = if (hasAlert) Color.Red else contentColor
+    val valueFontSize = when(tileCount) {
+        1 -> (data.fontSize + 18).sp
+        2 -> (data.fontSize + 10).sp
+        else -> (data.fontSize + 4).sp
+    }
+    
+    val nameFontSize = when(tileCount) {
+        1 -> (data.fontSize + 2).sp
+        else -> 10.sp
+    }
 
-    // Distinct background for the tile to make it look like a "window"
     val tileBgColor = if (data.isGlass) {
-        // High visibility glass for tiles
-        Color.White.copy(alpha = 0.4f)
+        Color.White.copy(alpha = 0.25f)
     } else {
-        // Very distinct overlay for tiles on solid backgrounds
-        if (isColorDark(baseColor)) {
-            Color.White.copy(alpha = 0.2f)
-        } else {
-            Color.Black.copy(alpha = 0.15f)
-        }
+        if (isColorDark(baseColor)) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f)
     }
 
     Box(
-        modifier = modifier
-            .background(tileBgColor),
+        modifier = modifier.background(tileBgColor).cornerRadius(12.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = value ?: "—",
-                style = TextStyle(
-                    color = androidx.glance.unit.ColorProvider(tileValueColor),
-                    fontSize = (data.fontSize + 16).sp, 
+                text = tileValue ?: "—",
+                style = androidx.glance.text.TextStyle(
+                    color = ColorProvider(tileValueColor),
+                    fontSize = valueFontSize, 
                     fontWeight = FontWeight.Bold
-                )
+                ),
+                maxLines = 1
             )
-            Spacer(modifier = GlanceModifier.height(2.dp))
+            Spacer(modifier = GlanceModifier.height(4.dp))
             Text(
                 text = name,
-                style = TextStyle(
-                    color = androidx.glance.unit.ColorProvider(secondaryColor),
-                    fontSize = (data.fontSize).sp,
-                    fontWeight = FontWeight.Bold 
+                style = androidx.glance.text.TextStyle(
+                    color = ColorProvider(secondaryColor),
+                    fontSize = nameFontSize,
+                    fontWeight = FontWeight.Medium 
                 ),
                 maxLines = 1
             )

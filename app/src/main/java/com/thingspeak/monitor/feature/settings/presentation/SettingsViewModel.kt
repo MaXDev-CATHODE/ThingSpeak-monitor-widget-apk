@@ -7,6 +7,8 @@ import com.thingspeak.monitor.core.datastore.ThemePreference
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -22,7 +24,9 @@ data class SettingsUiState(
     val serverUrl: String = "https://api.thingspeak.com/",
     val syncIntervalMinutes: Long = 30L,
     val targetTheme: ThemePreference = ThemePreference.SYSTEM,
-    val isChartMergingEnabled: Boolean = false
+    val isChartMergingEnabled: Boolean = false,
+    val isHighFrequencyEnabled: Boolean = false,
+    val highFrequencyIntervalMinutes: Long = 5L
 )
 
 /**
@@ -31,22 +35,27 @@ data class SettingsUiState(
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val appPreferences: AppPreferences
+    private val appPreferences: AppPreferences,
+    private val firedAlertDao: com.thingspeak.monitor.feature.alert.data.local.FiredAlertDao
 ) : ViewModel() {
 
-    val uiState: StateFlow<SettingsUiState> = kotlinx.coroutines.flow.combine(
+    val uiState: StateFlow<SettingsUiState> = combine(
         appPreferences.observeRefreshInterval(),
         appPreferences.observeServerUrl(),
         appPreferences.observeSyncInterval(),
         appPreferences.observeThemePreference(),
-        appPreferences.observeChartMerging()
-    ) { refresh, url, sync, theme, mergeCharts ->
+        appPreferences.observeChartMerging(),
+        appPreferences.observeIsHighFrequencyEnabled(),
+        appPreferences.observeHighFrequencyInterval()
+    ) { flows ->
         SettingsUiState(
-            refreshIntervalMs = refresh,
-            serverUrl = url,
-            syncIntervalMinutes = sync,
-            targetTheme = theme,
-            isChartMergingEnabled = mergeCharts
+            refreshIntervalMs = flows[0] as Long,
+            serverUrl = flows[1] as String,
+            syncIntervalMinutes = flows[2] as Long,
+            targetTheme = flows[3] as ThemePreference,
+            isChartMergingEnabled = flows[4] as Boolean,
+            isHighFrequencyEnabled = flows[5] as Boolean,
+            highFrequencyIntervalMinutes = flows[6] as Long
         )
     }.stateIn(
         scope = viewModelScope,
@@ -73,6 +82,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             appPreferences.setSyncInterval(minutes)
             com.thingspeak.monitor.core.worker.DataSyncWorker.schedule(context, minutes)
+            appPreferences.setIsWorkerScheduled(true)
         }
     }
 
@@ -87,6 +97,38 @@ class SettingsViewModel @Inject constructor(
     fun setChartMerging(enabled: Boolean) {
         viewModelScope.launch {
             appPreferences.setChartMerging(enabled)
+        }
+    }
+
+    /** Updates high-frequency monitoring state. */
+    fun setHighFrequencyEnabled(context: android.content.Context, enabled: Boolean) {
+        viewModelScope.launch {
+            appPreferences.setIsHighFrequencyEnabled(enabled)
+            if (enabled) {
+                com.thingspeak.monitor.core.worker.DataSyncService.start(context)
+            } else {
+                com.thingspeak.monitor.core.worker.DataSyncService.stop(context)
+            }
+        }
+    }
+
+    /** Updates high-frequency interval. */
+    fun setHighFrequencyInterval(context: android.content.Context, minutes: Long) {
+        viewModelScope.launch {
+            appPreferences.setHighFrequencyInterval(minutes)
+            // Restart service to apply new interval if enabled
+            val isEnabled = appPreferences.observeIsHighFrequencyEnabled().first()
+            if (isEnabled) {
+                com.thingspeak.monitor.core.worker.DataSyncService.start(context)
+            }
+        }
+    }
+
+    /** Clears all fired alert states, forcing re-evaluation on next sync. */
+    fun resetAlerts() {
+        viewModelScope.launch {
+            firedAlertDao.deleteAll()
+            android.util.Log.d("SettingsVM", "All fired alerts cleared — will re-trigger on next sync")
         }
     }
 }

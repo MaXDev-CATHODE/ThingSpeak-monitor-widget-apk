@@ -16,9 +16,10 @@ import com.thingspeak.monitor.feature.channel.data.local.FeedEntryEntity
         FeedEntryEntity::class,
         com.thingspeak.monitor.feature.alert.data.local.AlertEntity::class,
         com.thingspeak.monitor.feature.alert.data.local.FiredAlertEntity::class,
-        com.thingspeak.monitor.feature.channel.data.local.AlertRuleEntity::class
+        com.thingspeak.monitor.feature.channel.data.local.AlertRuleEntity::class,
+        com.thingspeak.monitor.feature.widget.WidgetBindingEntity::class
     ],
-    version = 6,
+    version = 8,
     exportSchema = false
 )
 abstract class ThingSpeakDatabase : RoomDatabase() {
@@ -26,4 +27,5 @@ abstract class ThingSpeakDatabase : RoomDatabase() {
     abstract fun alertDao(): com.thingspeak.monitor.feature.alert.data.local.AlertDao
     abstract fun firedAlertDao(): com.thingspeak.monitor.feature.alert.data.local.FiredAlertDao
     abstract fun alertRuleDao(): com.thingspeak.monitor.feature.channel.data.local.AlertRuleDao
+    abstract fun widgetBindingDao(): com.thingspeak.monitor.feature.widget.WidgetBindingDao
 }

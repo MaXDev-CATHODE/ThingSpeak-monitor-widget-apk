@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.first
 import androidx.datastore.preferences.core.*
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import com.thingspeak.monitor.feature.channel.data.local.AlertRuleEntity
 
 /**
  * Full data synchronization worker for all saved channels.
@@ -79,16 +80,41 @@ class DataSyncWorker @AssistedInject constructor(
 
     private suspend fun syncChannel(channel: ChannelPreferences.SavedChannel) {
         try {
-            // Fetch fresh data for the channel (default results count for history)
-            repository.refreshFeed(channel.id, channel.apiKey)
+            Log.d(TAG, "===============================")
+            Log.d(TAG, "syncChannel called for channel: ${channel.id}")
+            // Fetch fresh data for the channel, scaling results based on desired chart timespan
+            val chartProcessingPeriod = channel.chartProcessingPeriod.takeIf { it > 0 } ?: 24
+            val resultsCount = (chartProcessingPeriod * 60).coerceAtMost(4000) // Up to 4000 points
+            repository.refreshFeed(channel.id, channel.apiKey, resultsCount)
 
             val entries = repository.observeFeed(channel.id).first()
-            val latestEntry = entries.firstOrNull() ?: return
+            if (entries.isEmpty()) {
+                Log.d(TAG, "No entries found for channel ${channel.id}")
+                return
+            }
+            
+            // entries are sorted DESC (newest first), so .first() = latest
+            val latestEntry = entries.first()
+            Log.d(TAG, "Latest entry ID=${latestEntry.entryId}, fields=${latestEntry.fields}")
+            val newEntries = entries.filter { it.entryId > channel.lastProcessedEntryId }
+                .sortedBy { it.entryId }
+            
+            Log.d(TAG, "Found ${newEntries.size} new entries since last processed ID ${channel.lastProcessedEntryId}")
+            
+            val entriesToCheck = if (newEntries.isNotEmpty()) newEntries else listOf(latestEntry)
 
-            // 1. Check legacy AlertThresholds (Min/Max range)
+            // 1. Get enabled thresholds and rules
             val channelAlerts = alertDao.getAlertsForChannel(channel.id)
                 .filter { it.isEnabled }
-                .map { entity ->
+            val advancedRules = alertRuleDao.getRulesForChannel(channel.id)
+                .filter { it.isEnabled }
+                
+            val allFieldNumbers = (channelAlerts.map { it.fieldNumber } + advancedRules.map { it.fieldNumber }).distinct()
+            val violationsToNotify = mutableListOf<AlertThreshold>()
+
+            // 2. Process each field for edge-triggered alerts based on the LATEST entry
+            allFieldNumbers.forEach { fieldNum ->
+                val fieldRules = channelAlerts.filter { it.fieldNumber == fieldNum }.map { entity ->
                     AlertThreshold(
                         channelId = entity.channelId,
                         fieldNumber = entity.fieldNumber,
@@ -98,61 +124,108 @@ class DataSyncWorker @AssistedInject constructor(
                         isEnabled = entity.isEnabled,
                     )
                 }
+                val fieldAdvancedRules = advancedRules.filter { it.fieldNumber == fieldNum }
+                
+                // Find the latest entry that has a non-null value for THIS specific field
+                // entries are sorted DESC (newest first)
+                val latestEntryForField = entries.firstOrNull { it.fields[fieldNum] != null } ?: latestEntry
+                val latestFieldValue = latestEntryForField.fields[fieldNum]?.toDoubleOrNull()
+                
+                // Check if the data is stale
+                val entryAgeEntries = latestEntry.entryId - latestEntryForField.entryId
+                val isStale = entryAgeEntries > 5
+                
+                Log.d(TAG, "Evaluating field $fieldNum for channel ${channel.id}: latestValue=$latestFieldValue (from entry ${latestEntryForField.entryId}, entriesBehind=$entryAgeEntries, stale=$isStale)")
 
-            val violations = if (channelAlerts.isNotEmpty()) {
-                checkAlerts(latestEntry, channelAlerts).toMutableList()
-            } else mutableListOf()
-
-            // 2. Check Advanced AlertRules (Single condition: GT/LT)
-            val advancedRules = alertRuleDao.getRulesForChannel(channel.id).filter { it.isEnabled }
-            advancedRules.forEach { rule ->
-                val fieldValueStr = latestEntry.fields[rule.fieldNumber]
-                val fieldValue = fieldValueStr?.toDoubleOrNull()
-                if (fieldValue != null) {
-                    val isViolated = when (rule.condition) {
-                        "GREATER_THAN" -> fieldValue > rule.thresholdValue
-                        "LESS_THAN" -> fieldValue < rule.thresholdValue
-                        else -> false
+                if (isStale) {
+                    val fired = firedAlertDao.getFiredAlert(channel.id, fieldNum)
+                    if (fired != null) {
+                        Log.d(TAG, "Resetting stale fired alert for field $fieldNum")
+                        firedAlertDao.deleteFiredAlert(channel.id, fieldNum)
                     }
-                    if (isViolated) {
-                        violations.add(
-                            AlertThreshold(
+                    return@forEach
+                }
+
+                // Identify if the LATEST value violates ANY rule for this field
+                val currentFieldViolations = mutableSetOf<AlertThreshold>()
+                if (fieldRules.isNotEmpty()) {
+                    val legacyViolations = checkAlerts(latestEntryForField, fieldRules)
+                    if (legacyViolations.isNotEmpty()) {
+                        Log.d(TAG, "Legacy rule violation detected for field $fieldNum")
+                        currentFieldViolations.addAll(legacyViolations)
+                    }
+                }
+                
+                fieldAdvancedRules.forEach { rule ->
+                    val fieldValueStr = latestEntryForField.fields[rule.fieldNumber]
+                    val fieldValue = fieldValueStr?.toDoubleOrNull()
+                    Log.d(TAG, "Evaluating rule ID ${rule.id} (Field ${rule.fieldNumber}): value=$fieldValue, condition=${rule.condition} ${rule.thresholdValue}")
+                    if (fieldValue != null) {
+                        val isViolated = when (rule.condition) {
+                            "GREATER_THAN" -> fieldValue > rule.thresholdValue
+                            "LESS_THAN" -> fieldValue < rule.thresholdValue
+                            else -> false
+                        }
+                        if (isViolated) {
+                            Log.d(TAG, "!! VIOLATION detected for rule ID ${rule.id}")
+                            currentFieldViolations.add(AlertThreshold(
                                 channelId = channel.id,
                                 fieldNumber = rule.fieldNumber,
-                                fieldName = "Field ${rule.fieldNumber}",
-                                minValue = if (rule.condition == "LESS_THAN") null else rule.thresholdValue,
-                                maxValue = if (rule.condition == "GREATER_THAN") null else rule.thresholdValue,
+                                fieldName = channel.fieldNames[rule.fieldNumber] ?: "Field ${rule.fieldNumber}",
+                                minValue = if (rule.condition == "LESS_THAN") rule.thresholdValue else null,
+                                maxValue = if (rule.condition == "GREATER_THAN") rule.thresholdValue else null,
                                 isEnabled = true
+                            ))
+                        }
+                    }
+                }
+
+                val fired = firedAlertDao.getFiredAlert(channel.id, fieldNum)
+                
+                // Build a signature from current violations to detect changes in violation TYPE
+                val currentSignature = currentFieldViolations
+                    .sortedBy { "${it.minValue}:${it.maxValue}" }
+                    .joinToString("|") { "${it.minValue}:${it.maxValue}" }
+                
+                Log.d(TAG, "Violations for field $fieldNum: ${currentFieldViolations.size}. Signature='$currentSignature'. Previous fired state: $fired (prevSig='${fired?.violationSignature}')")
+
+                if (currentFieldViolations.isNotEmpty()) {
+                    if (fired == null || fired.violationSignature != currentSignature) {
+                        // NEW violation or CHANGED violation type — notify!
+                        Log.d(TAG, ">> TRIGGERING ALERT: fired=${fired == null}, sigChanged=${fired?.violationSignature != currentSignature}")
+                        violationsToNotify.addAll(currentFieldViolations)
+                        firedAlertDao.insertFiredAlert(
+                            com.thingspeak.monitor.feature.alert.data.local.FiredAlertEntity(
+                                channelId = channel.id,
+                                fieldNumber = fieldNum,
+                                lastFiredEntryId = latestEntry.entryId,
+                                lastFiredTimestamp = System.currentTimeMillis(),
+                                violationSignature = currentSignature
                             )
                         )
                     }
+                } else {
+                    if (fired != null) {
+                        // Edge triggered: Transition Bad -> Normal. Reset alert state.
+                        firedAlertDao.deleteFiredAlert(channel.id, fieldNum)
+                    }
                 }
             }
 
-            if (violations.isNotEmpty()) {
-            val currentTime = System.currentTimeMillis()
-            val THROTTLE_MS = 60L * 60L * 1000L // 60 min
-            val newViolations = violations.filter { violation ->
-                val fired = firedAlertDao.getFiredAlert(channel.id, violation.fieldNumber)
-                if (fired == null) true else (currentTime - (fired.lastFiredTimestamp ?: 0L) > THROTTLE_MS)
+            // 3. Fire notifications for any new violations found
+            if (violationsToNotify.isNotEmpty()) {
+                alertManager.fireAlert(channel.id, violationsToNotify)
             }
-            if (newViolations.isNotEmpty()) {
-                alertManager.fireAlert(channel.id, newViolations)
-                newViolations.forEach { violation ->
-                    firedAlertDao.insertFiredAlert(
-                        com.thingspeak.monitor.feature.alert.data.local.FiredAlertEntity(
-                            channelId = channel.id,
-                            fieldNumber = violation.fieldNumber,
-                            lastFiredEntryId = latestEntry.entryId,
-                            lastFiredTimestamp = currentTime
-                        )
-                    )
-                }
-            }
-        }
 
-        channelPrefs.save(channel.copy(lastSyncTime = System.currentTimeMillis()))
-            Log.d(TAG, "Synced channel ${channel.id}")
+            // 4. Update the sync metadata and mark entries as processed
+            if (newEntries.isNotEmpty()) {
+                val latestEntryId = newEntries.last().entryId
+                channelPrefs.save(channel.copy(
+                    lastSyncTime = System.currentTimeMillis(),
+                    lastProcessedEntryId = latestEntryId
+                ))
+                Log.d(TAG, "Synced channel ${channel.id}, processed new entries up to $latestEntryId")
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to sync channel ${channel.id}", e)
             if (e is com.thingspeak.monitor.feature.channel.data.repository.RateLimitException) {
@@ -211,7 +284,7 @@ class DataSyncWorker @AssistedInject constructor(
 
         fun constraints(): androidx.work.Constraints = androidx.work.Constraints.Builder()
             .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-            .setRequiresBatteryNotLow(true)
+            .setRequiresBatteryNotLow(false) // Relaxed for better reliability on emulators/low battery
             .build()
 
         fun schedule(context: Context, intervalMinutes: Long) {

@@ -44,6 +44,9 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
     lateinit var channelPreferences: ChannelPreferences
 
     @Inject
+    lateinit var widgetBindingRepository: WidgetBindingRepository
+
+    @Inject
     lateinit var repository: ChannelRepository
 
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
@@ -59,6 +62,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                 AppWidgetManager.EXTRA_APPWIDGET_ID,
                 AppWidgetManager.INVALID_APPWIDGET_ID
             )
+            android.util.Log.d("SNIPER_CONFIG", "Activity started with appWidgetId=$appWidgetId")
         }
 
         val resultValue = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -94,82 +98,101 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                 }
                             }
                         },
-                        onSave = { channelId, apiKey, name, bgColor, transparency, fontSize, visibleFields, chartField, isGlass ->
+                        onSave = { channelId, apiKey, name, bgColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan ->
                             isSaving = true
                             coroutineScope.launch {
-                                // 1. Save or Update Channel in DataStore
-                                val existingChannel = savedChannels.find { it.id == channelId }
-                                val updatedChannel = existingChannel?.copy(
-                                    apiKey = apiKey.takeIf { it.isNotBlank() },
-                                    name = name,
-                                    widgetBgColorHex = bgColor,
-                                    widgetTransparency = transparency,
-                                    widgetFontSize = fontSize,
-                                    widgetVisibleFields = visibleFields,
-                                    isGlassmorphismEnabled = isGlass,
-                                    chartField = chartField
-                                ) ?: ChannelPreferences.SavedChannel(
-                                    id = channelId,
-                                    apiKey = apiKey.takeIf { it.isNotBlank() },
-                                    name = name,
-                                    widgetBgColorHex = bgColor,
-                                    widgetTransparency = transparency,
-                                    widgetFontSize = fontSize,
-                                    widgetVisibleFields = visibleFields,
-                                    isGlassmorphismEnabled = isGlass,
-                                    chartField = chartField
-                                )
-                                channelPreferences.save(updatedChannel)
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                                    try {
+                                        android.util.Log.d("SNIPER_V5", "onSave triggered for channel $channelId, widget $appWidgetId")
 
-                                // 2. Associate exact GlanceId with this configuration
-                                try {
-                                    val glanceId = findGlanceId(appWidgetId)
-                                    
-                                    val safeBgColor = bgColor ?: "#FFFFFF"
-                                    
-                                    if (glanceId != null) {
-                                        // Make sure it uses WidgetPreferencesStateDefinition (the internal one for widgets)
-                                        updateAppWidgetState(this@ValueGridWidgetConfigActivity, WidgetPreferencesStateDefinition, glanceId) { prefs ->
-                                            prefs.toMutablePreferences().apply {
-                                                this[longPreferencesKey("channel_id")] = channelId
-                                                this[stringPreferencesKey("api_key")] = apiKey
-                                                this[stringPreferencesKey("channel_name")] = name
-                                                this[stringPreferencesKey("bg_color")] = safeBgColor
-                                                this[floatPreferencesKey("transparency")] = transparency
-                                                this[intPreferencesKey("font_size")] = fontSize
-                                                this[stringSetPreferencesKey("visible_fields")] = visibleFields.map { it.toString() }.toSet()
-                                                this[intPreferencesKey("chart_field")] = chartField
-                                                this[booleanPreferencesKey("is_glass")] = isGlass
-                                                this[booleanPreferencesKey("is_refreshing")] = true
+                                        // 1. Save Channel Preferences
+                                        val existingChannel = savedChannels.find { it.id == channelId }
+                                        val updatedChannel = (existingChannel ?: ChannelPreferences.SavedChannel(id = channelId, name = name)).copy(
+                                            apiKey = apiKey.takeIf { it.isNotBlank() },
+                                            name = name,
+                                            widgetBgColorHex = bgColor,
+                                            widgetTransparency = transparency,
+                                            widgetFontSize = fontSize,
+                                            widgetVisibleFields = visibleFields,
+                                            isGlassmorphismEnabled = isGlass,
+                                            chartField = chartField,
+                                            chartProcessingPeriod = chartTimespan
+                                        )
+                                        channelPreferences.save(updatedChannel)
+                                        android.util.Log.d("NUCLEAR_V8", "1. Channel prefs saved for $channelId")
+
+                                        // 2. CRITICAL SYNC BINDING (NUCLEAR V8)
+                                        // We WAIT for this to finish before allowing the activity to close.
+                                        // This ensures the widget will see the binding when it refreshes.
+                                        widgetBindingRepository.saveBinding(appWidgetId, channelId)
+                                        android.util.Log.d("NUCLEAR_V8", "2. Binding DB saved synchronicly: $appWidgetId -> $channelId")
+
+                                        // 3. Launch heavy/async background tasks
+                                        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+                                        val appContext = applicationContext
+                                        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+                                            try {
+                                                android.util.Log.e("NUCLEAR_V8", ">>> STARTING ASYNC SYNC V8 for $appWidgetId")
+                                                
+                                                // Update Glance State (Best Effort)
+                                                val gId = findGlanceId(appWidgetId)
+                                                if (gId != null) {
+                                                    updateAppWidgetState(appContext, WidgetPreferencesStateDefinition, gId) { p ->
+                                                        p.toMutablePreferences().apply {
+                                                            this[longPreferencesKey("channel_id")] = channelId
+                                                            this[stringPreferencesKey("api_key")] = apiKey ?: ""
+                                                            this[stringPreferencesKey("channel_name")] = name
+                                                            this[stringPreferencesKey("bg_color")] = bgColor ?: "#FFFFFF"
+                                                            this[floatPreferencesKey("transparency")] = transparency
+                                                            this[intPreferencesKey("font_size")] = fontSize
+                                                            this[stringSetPreferencesKey("visible_fields")] = visibleFields.map { it.toString() }.toSet()
+                                                            this[intPreferencesKey("chart_field")] = chartField
+                                                            this[booleanPreferencesKey("is_glass")] = isGlass
+                                                            this[intPreferencesKey("chart_timespan")] = chartTimespan
+                                                            this[booleanPreferencesKey("is_refreshing")] = true
+                                                        }
+                                                    }
+                                                    android.util.Log.d("NUCLEAR_V8", "Async: DataStore updated for $appWidgetId")
+                                                }
+                                                
+                                                ValueGridWidget().updateAll(appContext)
+                                                
+                                                // SYSTEM SIGNAL
+                                                val updateIntent = Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
+                                                    putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
+                                                    setPackage(packageName)
+                                                }
+                                                appContext.sendBroadcast(updateIntent)
+                                                android.util.Log.d("NUCLEAR_V8", "Async: System signals sent.")
+
+                                                // Background Refresh
+                                                repository.refreshFeed(channelId, apiKey)
+                                                com.thingspeak.monitor.core.worker.DataSyncWorker.runOnce(appContext)
+                                                android.util.Log.e("NUCLEAR_V8", "Async: Worker enqueued.")
+                                            } catch (e: Exception) {
+                                                android.util.Log.e("NUCLEAR_V8", "Async: FATAL ERROR", e)
+                                                ValueGridWidget().updateAll(appContext)
                                             }
                                         }
-                                        ValueGridWidget().update(this@ValueGridWidgetConfigActivity, glanceId)
-                                    } else {
-                                        ValueGridWidget().updateAll(this@ValueGridWidgetConfigActivity)
+
+                                        // 4. Finalize Activity ON MAIN THREAD
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            isConfigurationDone = true
+                                            val resultIntent = Intent().apply {
+                                                putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                                            }
+                                            setResult(RESULT_OK, resultIntent)
+                                            android.util.Log.e("NUCLEAR_V8", ">>> RESULT_OK sent to system. Finishing Activity.")
+                                            finish()
+                                        }
+
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("NUCLEAR_V8", "FATAL onSave error", e)
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            finish()
+                                        }
                                     }
-                                    
-                                    // Send broadcast for legacy reasons or launcher updates
-                                    val intent = Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
-                                        setClass(this@ValueGridWidgetConfigActivity, ValueGridWidgetReceiver::class.java)
-                                        putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
-                                    }
-                                    sendBroadcast(intent)
-                                    
-                                } catch (e: Exception) {
-                                    android.util.Log.e("ValueGridWidgetConfig", "Failed to find GlanceId for configuration", e)
-                                    ValueGridWidget().updateAll(this@ValueGridWidgetConfigActivity)
                                 }
-
-                                // 3. Sync data
-                                DataSyncWorker.runOnce(applicationContext)
-
-                                isConfigurationDone = true
-                                val result = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                                setResult(RESULT_OK, result)
-                                
-                                // Give a moment for state to persist
-                                kotlinx.coroutines.delay(300)
-                                finish()
                             }
                         }
                     )
@@ -179,20 +202,36 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
     }
 
     private suspend fun findGlanceId(appWidgetId: Int): androidx.glance.GlanceId? {
-        return try {
-            val manager = GlanceAppWidgetManager(this)
-            // Strategy 1: Official way
-            val officialId = manager.getGlanceIdBy(appWidgetId)
-            if (officialId != null) return officialId
-            
-            // Strategy 2: Search ValueGridWidget instances
-            manager.getGlanceIds(ValueGridWidget::class.java).find { 
-                manager.getAppWidgetId(it) == appWidgetId 
+        var retries = 5
+        while (retries > 0) {
+            try {
+                val manager = GlanceAppWidgetManager(this)
+                // Strategy 1: Official way
+                val officialId = manager.getGlanceIdBy(appWidgetId)
+                if (officialId != null) {
+                    android.util.Log.d("ValueGridConfig", "Found GlanceId via official way for $appWidgetId")
+                    return officialId
+                }
+                
+                // Strategy 2: Search ValueGridWidget instances
+                val foundId = manager.getGlanceIds(ValueGridWidget::class.java).find { 
+                    manager.getAppWidgetId(it) == appWidgetId 
+                }
+                
+                if (foundId != null) {
+                    android.util.Log.d("ValueGridConfig", "Found GlanceId via exhaustive search for $appWidgetId")
+                    return foundId
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ValueGridConfig", "Error searching for GlanceId for $appWidgetId", e)
             }
-        } catch (e: Exception) {
-            android.util.Log.e("ValueGridWidgetConfig", "Failed to find glanceId for $appWidgetId", e)
-            null
+
+            android.util.Log.w("ValueGridConfig", "GlanceId not found for $appWidgetId, retrying... ($retries left)")
+            kotlinx.coroutines.delay(100)
+            retries--
         }
+        android.util.Log.e("ValueGridConfig", "FAILED to find GlanceId for $appWidgetId after all retries")
+        return null
     }
 
     override fun onDestroy() {

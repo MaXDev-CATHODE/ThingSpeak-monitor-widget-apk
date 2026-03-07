@@ -1,6 +1,7 @@
 package com.thingspeak.monitor.core.notifications
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -34,28 +35,25 @@ class AlertManagerImpl @Inject constructor(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val alertsChannel = NotificationChannel(
                 ALERTS_CHANNEL_ID,
-                context.getString(R.string.notification_channel_alerts_name),
+                "ThingSpeak Alerts", // Direct string for debugging
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = context.getString(R.string.notification_channel_alerts_desc)
+                description = "Urgent alerts for ThingSpeak violations"
                 enableVibration(true)
+                setShowBadge(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             
-            val systemChannel = android.app.NotificationChannel(
-                "system_updates",
-                "System Updates",
-                android.app.NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = "General system notifications"
-            }
-
-            notificationManager.createNotificationChannel(alertsChannel)
-            notificationManager.createNotificationChannel(systemChannel)
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(alertsChannel)
         }
     }
 
     override fun fireAlert(channelId: Long, violations: List<AlertThreshold>) {
+        android.util.Log.d("AlertManager", "fireAlert called for channel $channelId with ${violations.size} violations")
+        
         if (!hasPostNotificationsPermission()) {
+            android.util.Log.w("AlertManager", "MISSING POST_NOTIFICATIONS PERMISSION!")
             return
         }
 
@@ -63,7 +61,6 @@ class AlertManagerImpl @Inject constructor(
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            // Potentially pass channel_id as extra to navigate specifically
             putExtra("channel_id", channelId)
         }
 
@@ -74,8 +71,6 @@ class AlertManagerImpl @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Build a notification for each violation, but since we want to avoid spam,
-        // we summarize them or post a single notification per channel with an InboxStyle.
         val inboxStyle = NotificationCompat.InboxStyle()
         violations.forEach { violation ->
             val content = context.getString(
@@ -89,32 +84,37 @@ class AlertManagerImpl @Inject constructor(
         val title = context.getString(R.string.notification_alert_title, channelId.toString())
 
         val notification = NotificationCompat.Builder(context, ALERTS_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_notification_bell)
             .setContentTitle(title)
-            .setContentText("Detected ${violations.size} thresholds violations!")
+            .setContentText(context.getString(R.string.notification_alert_summary, violations.size))
             .setStyle(inboxStyle)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setContentIntent(pendingIntent)
             .setGroup(GROUP_KEY_THINGSPEAK_ALERTS)
             .setAutoCancel(true)
+            .setDefaults(Notification.DEFAULT_ALL)
             .build()
 
         val summaryNotification = NotificationCompat.Builder(context, ALERTS_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_notification_bell)
             .setStyle(NotificationCompat.InboxStyle()
-                .setSummaryText("Threshold alerts"))
+                .setSummaryText(context.getString(R.string.notification_channel_alerts_name)))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setGroup(GROUP_KEY_THINGSPEAK_ALERTS)
             .setGroupSummary(true)
             .setAutoCancel(true)
             .build()
 
+        val signatureString = violations.joinToString("|") { "${it.fieldNumber}:${it.minValue}:${it.maxValue}" }
+        val notificationId = (channelId.hashCode() * 31 + signatureString.hashCode())
+
         try {
-            // Channel ID is used as unique notification ID for the channel
-            notificationManager.notify(channelId.toInt(), notification)
+            android.util.Log.d("AlertManager", "Posting notification for channel $channelId. ID=$notificationId. Channel=$ALERTS_CHANNEL_ID")
+            notificationManager.notify(notificationId, notification)
             notificationManager.notify(SUMMARY_ID, summaryNotification)
-        } catch (e: SecurityException) {
-            // Ignored, handled by hasPostNotificationsPermission but keeping for safety
+        } catch (e: Exception) {
+            android.util.Log.e("AlertManager", "Failed to post notification", e)
         }
     }
 
@@ -130,7 +130,7 @@ class AlertManagerImpl @Inject constructor(
     }
 
     companion object {
-        private const val ALERTS_CHANNEL_ID = "alerts_channel"
+        private const val ALERTS_CHANNEL_ID = "alerts_channel_v2"
         private const val GROUP_KEY_THINGSPEAK_ALERTS = "com.thingspeak.monitor.ALERTS_GROUP"
         private const val SUMMARY_ID = 1000
     }

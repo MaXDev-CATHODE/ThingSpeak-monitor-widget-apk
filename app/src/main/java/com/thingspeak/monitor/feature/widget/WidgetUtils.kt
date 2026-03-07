@@ -31,19 +31,19 @@ object WidgetUtils {
         return elapsed > (thresholdMs + (2 * 60 * 1000L)) 
     }
 
-    fun formatRelativeTime(createdAt: String): String {
+    fun formatRelativeTime(context: Context, createdAt: String): String {
         val timestamp = parseIsoTime(createdAt) ?: return "—"
-        return formatTime(timestamp)
+        return formatTime(context, timestamp)
     }
 
-    fun formatTime(timestamp: Long): String {
+    fun formatTime(context: Context, timestamp: Long): String {
         val diff = System.currentTimeMillis() - timestamp
         
         return when {
-            diff < 0 -> "just now"
-            diff < 60 * 1000L -> "${diff / 1000}s ago"
-            diff < 60 * 60 * 1000L -> "${diff / (60 * 1000L)}m ago"
-            diff < 24 * 60 * 60 * 1000L -> "${diff / (60 * 60 * 1000L)}h ago"
+            diff < 0 -> context.getString(com.thingspeak.monitor.R.string.widget_time_just_now)
+            diff < 60 * 1000L -> context.getString(com.thingspeak.monitor.R.string.widget_time_seconds_ago, diff / 1000)
+            diff < 60 * 60 * 1000L -> context.getString(com.thingspeak.monitor.R.string.widget_time_minutes_ago, diff / (60 * 1000L))
+            diff < 24 * 60 * 60 * 1000L -> context.getString(com.thingspeak.monitor.R.string.widget_time_hours_ago, diff / (60 * 60 * 1000L))
             else -> {
                 val instant = Instant.ofEpochMilli(timestamp)
                 val formatter = DateTimeFormatter.ofPattern("MMM dd, HH:mm", Locale.US)

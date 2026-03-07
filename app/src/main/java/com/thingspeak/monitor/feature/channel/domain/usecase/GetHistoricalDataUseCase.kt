@@ -24,12 +24,14 @@ class GetHistoricalDataUseCase @Inject constructor(
     suspend operator fun invoke(
         channelId: Long,
         apiKey: String?,
-        start: String,
-        end: String,
+        start: String? = null,
+        end: String? = null,
         average: Int? = null,
+        results: Int? = null,
+        days: Int? = null,
     ): ApiResult<List<FeedEntry>> {
         return safeApiCall {
-            repository.getHistoricalFeed(channelId, apiKey, start, end, average)
+            repository.getHistoricalFeed(channelId, apiKey, start, end, average, results, days)
         }
     }
 }
