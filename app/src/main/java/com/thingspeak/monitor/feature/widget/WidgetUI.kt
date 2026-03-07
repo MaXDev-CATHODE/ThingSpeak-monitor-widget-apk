@@ -224,11 +224,9 @@ fun WidgetContent(context: Context, data: WidgetData) {
     val secondaryContentColor = if (isDarkBg) Color.LightGray else Color.DarkGray
 
     val bgColor = if (data.isGlass) {
-        androidx.glance.unit.ColorProvider(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f))
+        androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f)
     } else {
-        androidx.glance.unit.ColorProvider(
-            androidx.compose.ui.graphics.Color(baseColor).copy(alpha = data.transparency)
-        )
+        androidx.compose.ui.graphics.Color(baseColor).copy(alpha = data.transparency)
     }
 
     Column(

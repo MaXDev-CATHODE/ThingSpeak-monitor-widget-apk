@@ -216,8 +216,8 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
 
                 val bitmap = WidgetChartGenerator.generateLineChart(
                     dataMap, 
-                    safeWidth = 600, // Higher resolution
-                    safeHeight = 300,
+                    safeWidth = 300, // Reduced resolution to prevent TransactionTooLargeException on Pixel
+                    safeHeight = 150,
                     timeRangeMs = effectiveXRange,
                     referenceNow = maxTime // Anchored to latest data point
                 )
