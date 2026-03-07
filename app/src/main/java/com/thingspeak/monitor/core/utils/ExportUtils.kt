@@ -26,7 +26,7 @@ object ExportUtils {
         val sb = StringBuilder()
         
         val sortedFieldIndices = fieldNames.keys.sorted()
-        sb.append("Date,Entry ID")
+        sb.append("Date,Entry_ID")
         sortedFieldIndices.forEach { index ->
             sb.append(",${escapeCsv(fieldNames[index] ?: "Field $index")}")
         }

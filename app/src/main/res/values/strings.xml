@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ThingSpeak Monitor</string>
-    <string name="widget_name_glance">ThingSpeak - Kanał</string>
-    <string name="widget_name_grid">ThingSpeak - Wartości</string>
+    <string name="widget_name_glance">Glance Widget</string>
+    <string name="widget_name_grid">Value Grid Widget</string>
     <string name="widget_description">Monitor ThingSpeak channel data</string>
     <string name="widget_configure_title">Configure Widget</string>
     <string name="widget_channel_id_label">Channel ID</string>
@@ -43,7 +43,7 @@
     <string name="channel_last_updated">Updated: %1$s</string>
 
     <string name="dialog_channel_name">Channel Name (Label)</string>
-    <string name="chart_marker_content">%1$.2f\n%2$s</string>
+    <string name="chart_marker_content">Value: %1$.2f\nDate: %2$s</string>
     <string name="error_channel_exists">Channel with this ID already exists</string>
     <string name="error_refresh_failed">Refresh failed: %1$s</string>
     <string name="error_invalid_api_key">Invalid API Key</string>
@@ -55,6 +55,7 @@
     <string name="notification_channel_alerts_desc">Notifications for channel value threshold violations.</string>
     <string name="notification_alert_title">ThingSpeak Alert: %1$s</string>
     <string name="notification_alert_content">Field %1$s: value %2$s</string>
+    <string name="notification_alert_summary">Detected %1$d thresholds violations!</string>
     
     <!-- Search Dialog -->
     <string name="dialog_add_manual">Manual</string>
@@ -86,5 +87,84 @@
     <string name="widget_field_name">Field %1$d</string>
     <string name="widget_working_offline">Working Offline — Some data may be stale</string>
     <string name="widget_glassmorphism">Glassmorphism Effect</string>
+    
+    <!-- Chart UI Extras -->
+    <string name="chart_back">Back</string>
+    <string name="chart_select_range">Select Range</string>
+    <string name="chart_live_mode">Live Mode</string>
+    <string name="chart_toggle_merging">Toggle Merging</string>
+    <string name="chart_smooth">Smooth</string>
+    <string name="chart_change_filter">Change Filter</string>
+    <string name="chart_fullscreen_title">Fullscreen Chart</string>
+    <string name="chart_close">Close</string>
+    <string name="chart_retry">Retry</string>
+    <string name="chart_warning">Warning</string>
+    <string name="chart_no_data_desc">No data indicator</string>
+
+    <!-- Alert Rules UI -->
+    <string name="alert_rules_title">Alert Rules</string>
+    <string name="alert_add_rule">Add Rule</string>
+    <string name="alert_no_rules">No rules defined</string>
+    <string name="alert_dialog_title">New Alert Rule</string>
+    <string name="alert_select_field">Select Field</string>
+    <string name="alert_condition">Condition</string>
+    <string name="alert_threshold">Threshold value</string>
+    <string name="alert_condition_gt">Greater Than</string>
+    <string name="alert_condition_lt">Less Than</string>
+
+    <!-- Channel Settings UI -->
+    <string name="channel_settings_title">Channel Settings</string>
+    <string name="settings_rounding">Rounding decimal places: %1$d</string>
+    <string name="settings_alert_rules">Alert Rules</string>
+    <string name="settings_configure">Configure</string>
+    <string name="settings_alert_rules_desc">Configure thresholds to receive notifications when values go out of range.</string>
+
+    <!-- General Settings UI -->
+    <string name="settings_appearance">Appearance</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_system">System</string>
+    <string name="settings_merge_charts">Merge Chart Fields</string>
+    <string name="settings_merge_charts_desc">Display all fields on a single chart</string>
+    <string name="settings_refresh_warning">High frequency (1s) may trigger rate limits. App will automatically retry for up to 15s.</string>
+    <string name="settings_alert_notifications">Alert Notifications</string>
+    <string name="settings_alert_notifications_desc">Alerts are sent when channel fields cross defined thresholds. Rules can be configured in Channel Settings.</string>
+
+    <!-- Widget Config UI -->
+    <string name="widget_manual_config">Manual Configuration</string>
+    <string name="widget_styling_options">Styling &amp; Visual Options</string>
+    <string name="widget_grid_fields_hint">Select exactly 2 or 4 fields for the grid layout.</string>
+    <string name="widget_id_format">ID: %1$d</string>
+    <string name="widget_channel_default_name">Channel %1$d</string>
+    <string name="widget_click_to_configure">Click to select Channel</string>
+    <string name="widget_refreshing_indicator">…</string>
+    <string name="widget_empty_channel_data">No data available for this channel</string>
+    <string name="widget_time_just_now">just now</string>
+    <string name="widget_time_seconds_ago">%1$ds ago</string>
+    <string name="widget_time_minutes_ago">%1$dm ago</string>
+    <string name="widget_time_hours_ago">%1$dh ago</string>
+
+    <!-- Errors and General UI -->
+    <string name="error_invalid_channel_id">Invalid Channel ID</string>
+    <string name="error_unknown">Unknown Error</string>
+    <string name="error_exception">Exception occurred: %1$s</string>
+    <string name="error_search_failed">Search failed: %1$s</string>
+    <string name="error_search_error">Search error: %1$s</string>
+
+    <string name="settings_battery_optimization">Ignore Battery Optimizations</string>
+    <string name="settings_battery_optimization_desc">Ensures notifications are delivered as soon as possible by letting the app run in the background without restrictions.</string>
+    <string name="settings_battery_optimization_button">Change in System Settings</string>
+    <string name="settings_sync_now">Check Alerts Now</string>
+    <string name="settings_sync_now_desc">Manually force synchronization and alert checks for all channels.</string>
+    <string name="settings_sync_interval">Background Check Interval</string>
+    <string name="settings_sync_interval_desc">How often the app checks data for alerts in the background. Android restricts this to a minimum of 15 minutes.</string>
+    <string name="settings_sync_interval_15m">15 Minutes</string>
+    <string name="settings_sync_interval_30m">30 Minutes</string>
+    <string name="settings_sync_interval_1h">1 Hour</string>
+    <string name="settings_high_freq">High Frequency Monitoring</string>
+    <string name="settings_high_freq_desc">Enables background data checks more often than every 15 minutes. Note: This can severely drain battery.</string>
+    <string name="settings_high_freq_1m">1 Minute</string>
+    <string name="settings_high_freq_5m">5 Minutes</string>
+    <string name="settings_high_freq_10m">10 Minutes</string>
 </resources>
 

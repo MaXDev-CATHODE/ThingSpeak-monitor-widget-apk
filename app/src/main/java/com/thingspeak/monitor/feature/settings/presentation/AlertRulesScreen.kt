@@ -40,12 +40,12 @@ fun AlertRulesScreen(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text("Alert Rules") },
+                title = { Text(stringResource(R.string.alert_rules_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Navigate Back"
+                            contentDescription = stringResource(R.string.chart_back)
                         )
                     }
                 },
@@ -53,7 +53,7 @@ fun AlertRulesScreen(
                     IconButton(onClick = { showAddDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "Add Rule"
+                            contentDescription = stringResource(R.string.alert_add_rule)
                         )
                     }
                 }
@@ -66,7 +66,7 @@ fun AlertRulesScreen(
             }
         } else if (uiState.rules.isEmpty()) {
             Box(modifier = Modifier.padding(innerPadding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No rules defined", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.alert_no_rules), style = MaterialTheme.typography.bodyLarge)
             }
         } else {
             LazyColumn(
@@ -81,6 +81,7 @@ fun AlertRulesScreen(
                     AlertRuleItem(
                         rule = rule,
                         fieldName = fieldName,
+                        onEditClick = { editingRule = rule },
                         onDeleteClick = { viewModel.deleteRule(rule) },
                         onToggleEnabled = { viewModel.toggleRule(rule, it) }
                     )
@@ -100,6 +101,20 @@ fun AlertRulesScreen(
             }
         )
     }
+
+    // Edit dialog
+    editingRule?.let { rule ->
+        val fields = uiState.channel?.fieldNames ?: emptyMap()
+        EditRuleDialog(
+            rule = rule,
+            fields = fields,
+            onDismiss = { editingRule = null },
+            onConfirm = { newFieldNumber, newCondition, newThreshold ->
+                viewModel.updateRule(rule, newFieldNumber, newCondition, newThreshold)
+                editingRule = null
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -107,6 +122,7 @@ fun AlertRulesScreen(
 fun AlertRuleItem(
     rule: AlertRuleEntity,
     fieldName: String,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit
 ) {
@@ -128,8 +144,11 @@ fun AlertRuleItem(
                 checked = rule.isEnabled,
                 onCheckedChange = onToggleEnabled
             )
+            IconButton(onClick = onEditClick) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary)
+            }
             IconButton(onClick = onDeleteClick) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.dialog_delete), tint = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -155,7 +174,7 @@ fun AddRuleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Alert Rule") },
+        title = { Text(stringResource(R.string.alert_dialog_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 
@@ -167,7 +186,7 @@ fun AddRuleDialog(
                         value = selectedFieldLabel,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Select Field") },
+                        label = { Text(stringResource(R.string.alert_select_field)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedField) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
@@ -195,7 +214,7 @@ fun AddRuleDialog(
                         value = selectedConditionLabel,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Condition") },
+                        label = { Text(stringResource(R.string.alert_condition)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCondition) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
@@ -219,7 +238,7 @@ fun AddRuleDialog(
                 OutlinedTextField(
                     value = threshold,
                     onValueChange = { threshold = it },
-                    label = { Text("Threshold value") },
+                    label = { Text(stringResource(R.string.alert_threshold)) },
                     isError = isError,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -241,6 +260,113 @@ fun AddRuleDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditRuleDialog(
+    rule: AlertRuleEntity,
+    fields: Map<Int, String>,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, String, Double) -> Unit
+) {
+    var fieldNumber by remember { mutableStateOf(rule.fieldNumber) }
+    var condition by remember { mutableStateOf(rule.condition) }
+    var threshold by remember { mutableStateOf(rule.thresholdValue.toString()) }
+
+    var expandedField by remember { mutableStateOf(false) }
+    var expandedCondition by remember { mutableStateOf(false) }
+
+    val conditions = listOf("GREATER_THAN" to "Greater Than", "LESS_THAN" to "Less Than")
+    val selectedConditionLabel = conditions.find { it.first == condition }?.second ?: "Greater Than"
+    val selectedFieldLabel = fields[fieldNumber] ?: "Field $fieldNumber"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Rule") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+                ExposedDropdownMenuBox(
+                    expanded = expandedField,
+                    onExpandedChange = { expandedField = !expandedField }
+                ) {
+                    OutlinedTextField(
+                        value = selectedFieldLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(R.string.alert_select_field)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedField) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedField,
+                        onDismissRequest = { expandedField = false }
+                    ) {
+                        fields.forEach { (num, name) ->
+                            DropdownMenuItem(
+                                text = { Text(name) },
+                                onClick = {
+                                    fieldNumber = num
+                                    expandedField = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                ExposedDropdownMenuBox(
+                    expanded = expandedCondition,
+                    onExpandedChange = { expandedCondition = !expandedCondition }
+                ) {
+                    OutlinedTextField(
+                        value = selectedConditionLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(R.string.alert_condition)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCondition) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedCondition,
+                        onDismissRequest = { expandedCondition = false }
+                    ) {
+                        conditions.forEach { (key, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    condition = key
+                                    expandedCondition = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                val isError = threshold.isNotEmpty() && threshold.toDoubleOrNull() == null
+                OutlinedTextField(
+                    value = threshold,
+                    onValueChange = { threshold = it },
+                    label = { Text(stringResource(R.string.alert_threshold)) },
+                    isError = isError,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            val isThresholdValid = threshold.isNotEmpty() && threshold.toDoubleOrNull() != null
+            TextButton(
+                onClick = {
+                    threshold.toDoubleOrNull()?.let { onConfirm(fieldNumber, condition, it) }
+                },
+                enabled = isThresholdValid
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
 @androidx.compose.ui.tooling.preview.Preview(showBackground = true)
 @Composable
 fun AlertRulesScreenPreview() {
@@ -251,5 +377,3 @@ fun AlertRulesScreenPreview() {
         )
     }
 }
-
-

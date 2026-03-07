@@ -15,7 +15,7 @@ import com.thingspeak.monitor.feature.channel.domain.model.FeedEntry
 fun FeedEntryDto.toEntity(channelId: Long): FeedEntryEntity = FeedEntryEntity(
     channelId = channelId,
     entryId = entryId ?: 0L,
-    createdAt = createdAt,
+    createdAt = createdAt ?: "",
     field1 = field1,
     field2 = field2,
     field3 = field3,

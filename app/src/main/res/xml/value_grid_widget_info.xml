@@ -5,7 +5,7 @@
     android:targetCellWidth="2"
     android:targetCellHeight="2"
     android:updatePeriodMillis="0"
-    android:initialLayout="@layout/glance_default_loading_layout"
+    android:initialLayout="@layout/widget_loading"
     android:configure="com.thingspeak.monitor.feature.widget.ValueGridWidgetConfigActivity"
     android:resizeMode="horizontal|vertical"
     android:label="@string/widget_name_grid"

@@ -6,10 +6,18 @@ import android.content.Intent
 import android.util.Log
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * System entry point for the ThingSpeak homescreen widget.
@@ -18,13 +26,41 @@ import java.util.concurrent.TimeUnit
  * Manages periodic [WidgetRefreshWorker] lifecycle: enqueue on first widget,
  * cancel when the last widget is removed.
  */
+@AndroidEntryPoint
 class WidgetReceiver : GlanceAppWidgetReceiver() {
+
+    @Inject
+    lateinit var repository: WidgetBindingRepository
 
     override val glanceAppWidget: GlanceAppWidget = ThingSpeakGlanceWidget()
 
+    private val scope = CoroutineScope(Dispatchers.IO)
+
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
-        Log.d(TAG, "onUpdate called for widgets: ${appWidgetIds.joinToString()}")
+        Log.d("NUCLEAR_V8", "StandardWidget onUpdate for: ${appWidgetIds.joinToString()}")
+
+        // FORCE SYNC ID FROM ROOM TO GLANCE (NUCLEAR V8)
+        scope.launch {
+            appWidgetIds.forEach { id ->
+                try {
+                    val boundId = repository.getBindingSync(id)
+                    if (boundId > 0) {
+                        val gId = GlanceAppWidgetManager(context).getGlanceIdBy(id)
+                        updateAppWidgetState(context, WidgetPreferencesStateDefinition, gId) { p ->
+                            p.toMutablePreferences().apply {
+                                if (this[longPreferencesKey("channel_id")] != boundId) {
+                                    this[longPreferencesKey("channel_id")] = boundId
+                                    Log.e("NUCLEAR_V8", "PUSHED binding to Glance for standard $id -> $boundId")
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("NUCLEAR_V8", "Failed to push binding for standard $id", e)
+                }
+            }
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {

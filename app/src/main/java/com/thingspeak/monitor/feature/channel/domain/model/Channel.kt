@@ -22,7 +22,8 @@ data class Channel(
     val chartProcessingPeriod: Int = 0,
     val preferredChartFields: Set<Int>? = null,
     val lastSyncTime: Long = 0L,
-    val widgetVisibleFields: Set<Int>? = null
+    val widgetVisibleFields: Set<Int>? = null,
+    val lastProcessedEntryId: Long = 0L
 )
 
 enum class SyncStatus {

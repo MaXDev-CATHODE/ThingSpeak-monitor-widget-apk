@@ -35,12 +35,12 @@ fun ChannelSettingsScreen(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(uiState.channel?.name ?: "Channel Settings") },
+                title = { Text(uiState.channel?.name ?: stringResource(R.string.channel_settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Navigate Back"
+                            contentDescription = stringResource(R.string.chart_back)
                         )
                     }
                 }
@@ -65,17 +65,17 @@ fun ChannelSettingsScreen(
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.ShowChart,
-                            contentDescription = "Chart Settings",
+                            contentDescription = stringResource(R.string.widget_content_chart),
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Chart Settings",
+                            text = stringResource(R.string.widget_content_chart),
                             style = MaterialTheme.typography.titleMedium
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Rounding decimal places: ${uiState.channel?.chartRounding ?: 2}")
+                    Text(stringResource(R.string.settings_rounding, uiState.channel?.chartRounding ?: 2))
                     Slider(
                         value = (uiState.channel?.chartRounding ?: 2).toFloat(),
                         onValueChange = { viewModel.updateChartSettings(rounding = it.toInt()) },
@@ -96,21 +96,21 @@ fun ChannelSettingsScreen(
                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Default.NotificationsActive,
-                                contentDescription = "Alert Rules",
+                                contentDescription = stringResource(R.string.settings_alert_rules),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Alert Rules",
+                                text = stringResource(R.string.settings_alert_rules),
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
                         TextButton(onClick = { onNavigateToAlertRules(channelId) }) {
-                            Text("Configure")
+                            Text(stringResource(R.string.settings_configure))
                         }
                     }
                     Text(
-                        text = "Configure thresholds to receive notifications when values go out of range.",
+                        text = stringResource(R.string.settings_alert_rules_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

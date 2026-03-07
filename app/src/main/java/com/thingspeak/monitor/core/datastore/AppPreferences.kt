@@ -39,6 +39,9 @@ class AppPreferences @Inject constructor(
     private val chartSmoothingKey = androidx.datastore.preferences.core.booleanPreferencesKey("is_chart_smoothing_enabled")
     private val chartFilterKey = androidx.datastore.preferences.core.stringPreferencesKey("last_chart_filter")
     private val chartMergingKey = androidx.datastore.preferences.core.booleanPreferencesKey("is_chart_merging_enabled")
+    private val isWorkerScheduledKey = androidx.datastore.preferences.core.booleanPreferencesKey("is_worker_scheduled")
+    private val isHighFrequencyEnabledKey = androidx.datastore.preferences.core.booleanPreferencesKey("is_high_frequency_enabled")
+    private val highFrequencyIntervalKey = androidx.datastore.preferences.core.longPreferencesKey("high_frequency_interval_minutes")
 
     /** Observes the migration status. */
     fun observeMigrationCompleted(): Flow<Boolean> =
@@ -136,5 +139,32 @@ class AppPreferences @Inject constructor(
     /** Sets the chart merging state. */
     suspend fun setChartMerging(enabled: Boolean) {
         dataStore.edit { it[chartMergingKey] = enabled }
+    }
+
+    /** Observes if the background worker has been scheduled. */
+    fun observeIsWorkerScheduled(): Flow<Boolean> =
+        dataStore.data.map { it[isWorkerScheduledKey] ?: false }.distinctUntilChanged()
+
+    /** Sets the background worker scheduled state. */
+    suspend fun setIsWorkerScheduled(scheduled: Boolean) {
+        dataStore.edit { it[isWorkerScheduledKey] = scheduled }
+    }
+
+    /** Observes if high-frequency monitoring is enabled. */
+    fun observeIsHighFrequencyEnabled(): Flow<Boolean> =
+        dataStore.data.map { it[isHighFrequencyEnabledKey] ?: false }.distinctUntilChanged()
+
+    /** Sets the high-frequency monitoring state. */
+    suspend fun setIsHighFrequencyEnabled(enabled: Boolean) {
+        dataStore.edit { it[isHighFrequencyEnabledKey] = enabled }
+    }
+
+    /** Observes the high-frequency monitoring interval (in minutes). */
+    fun observeHighFrequencyInterval(): Flow<Long> =
+        dataStore.data.map { it[highFrequencyIntervalKey] ?: 5L }.distinctUntilChanged()
+
+    /** Sets the high-frequency monitoring interval (in minutes). */
+    suspend fun setHighFrequencyInterval(minutes: Long) {
+        dataStore.edit { it[highFrequencyIntervalKey] = minutes }
     }
 }

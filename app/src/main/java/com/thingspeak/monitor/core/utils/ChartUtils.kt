@@ -18,70 +18,39 @@ object ChartUtils {
      */
     fun downsampleLTTB(data: List<Entry>, threshold: Int): List<Entry> {
         val size = data.size
-        if (size <= threshold || threshold < 3) return data
+        if (size <= threshold || threshold < 4) return data
 
-        val sampled = mutableListOf<Entry>()
-        val bucketSize = (size - 2).toDouble() / (threshold - 2)
+        val sampled = ArrayList<Entry>(threshold + 2)
+        val bucketCount = threshold / 2
+        val bucketSize = size.toFloat() / bucketCount
 
-        // Always keep the first point
-        var a = 0
-        sampled.add(data[a])
+        sampled.add(data[0])
 
-        for (i in 0 until threshold - 2) {
-            // Calculate range for current bucket
-            val rangeStart = (i * bucketSize).toInt() + 1
-            val rangeEnd = ((i + 1) * bucketSize).toInt() + 1
-
-            // Calculate range for next bucket (to find average point)
-            val nextRangeStart = ((i + 1) * bucketSize).toInt() + 1
-            val nextRangeEnd = ((i + 2) * bucketSize).toInt() + 1
+        for (i in 0 until bucketCount) {
+            val start = (i * bucketSize).toInt()
+            val end = ((i + 1) * bucketSize).toInt().coerceAtMost(size - 1)
             
-            // Calculate average point of the next bucket
-            var avgX = 0f
-            var avgY = 0f
-            var avgCount = 0
-            val limit = if (nextRangeEnd < size) nextRangeEnd else size
-            for (j in nextRangeStart until limit) {
-                avgX += data[j].x
-                avgY += data[j].y
-                avgCount++
+            if (start >= end) continue
+
+            var minEntry = data[start]
+            var maxEntry = data[start]
+            
+            for (j in start..end) {
+                val entry = data[j]
+                if (entry.y < minEntry.y) minEntry = entry
+                if (entry.y > maxEntry.y) maxEntry = entry
             }
-            if (avgCount > 0) {
-                avgX /= avgCount
-                avgY /= avgCount
+            
+            if (minEntry.x < maxEntry.x) {
+                sampled.add(minEntry)
+                if (minEntry !== maxEntry) sampled.add(maxEntry)
             } else {
-                // If next bucket is empty (end of list), use the last point
-                avgX = data[size - 1].x
-                avgY = data[size - 1].y
+                sampled.add(maxEntry)
+                if (minEntry !== maxEntry) sampled.add(minEntry)
             }
-
-            // Find point in current bucket that forms the largest triangle area
-            var maxArea = -1.0
-            var nextA = rangeStart
-            val pA = data[a]
-
-            val currentLimit = if (rangeEnd < size) rangeEnd else size
-            for (j in rangeStart until currentLimit) {
-                val pB = data[j]
-                // Area of triangle calculation (cross product)
-                val area = abs(
-                    (pA.x.toDouble() - avgX) * (pB.y.toDouble() - pA.y.toDouble()) -
-                    (pA.x.toDouble() - pB.x.toDouble()) * (avgY - pA.y.toDouble())
-                ) * 0.5
-
-                if (area > maxArea) {
-                    maxArea = area
-                    nextA = j
-                }
-            }
-
-            sampled.add(data[nextA])
-            a = nextA // Selected point becomes point A for next calculation
         }
 
-        // Always keep the last point
         sampled.add(data[size - 1])
-
-        return sampled
+        return sampled.distinctBy { it.x }.sortedBy { it.x }
     }
 }

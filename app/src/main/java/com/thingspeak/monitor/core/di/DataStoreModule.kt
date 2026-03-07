@@ -1,9 +1,12 @@
 package com.thingspeak.monitor.core.di
 
 import android.content.Context
-import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.emptyPreferences
+import java.io.File
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -24,9 +27,9 @@ annotation class ChannelsDataStore
 @Retention(AnnotationRetention.BINARY)
 annotation class AlertsDataStore
 
-private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "thingspeak_settings")
-private val Context.channelsDataStore: DataStore<Preferences> by preferencesDataStore(name = "thingspeak_channels")
-private val Context.alertsDataStore: DataStore<Preferences> by preferencesDataStore(name = "thingspeak_alerts")
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class WidgetBindingDataStore
 
 /**
  * Hilt module providing separate DataStore instances for different domains.
@@ -38,15 +41,25 @@ object DataStoreModule {
     @Provides
     @Singleton
     @SettingsDataStore
-    fun provideSettingsDataStore(@ApplicationContext context: Context): DataStore<Preferences> = context.settingsDataStore
+    fun provideSettingsDataStore(@ApplicationContext context: Context): DataStore<Preferences> = 
+        createMultiProcessPrefs("thingspeak_settings", context)
 
     @Provides
     @Singleton
     @ChannelsDataStore
-    fun provideChannelsDataStore(@ApplicationContext context: Context): DataStore<Preferences> = context.channelsDataStore
+    fun provideChannelsDataStore(@ApplicationContext context: Context): DataStore<Preferences> = 
+        createMultiProcessPrefs("thingspeak_channels", context)
 
     @Provides
     @Singleton
     @AlertsDataStore
-    fun provideAlertsDataStore(@ApplicationContext context: Context): DataStore<Preferences> = context.alertsDataStore
+    fun provideAlertsDataStore(@ApplicationContext context: Context): DataStore<Preferences> = 
+        createMultiProcessPrefs("thingspeak_alerts", context)
+
+    private fun createMultiProcessPrefs(name: String, context: Context): DataStore<Preferences> {
+        return PreferenceDataStoreFactory.create(
+            corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+            produceFile = { File(context.filesDir, "datastore/$name.preferences_pb") }
+        )
+    }
 }

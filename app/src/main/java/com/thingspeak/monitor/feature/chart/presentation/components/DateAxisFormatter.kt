@@ -7,8 +7,10 @@ import java.time.format.DateTimeFormatter
 
 /**
  * Formatter for X-Axis to display dates instead of raw Float values.
- *
- * @param isDailyResource if true, formats as Time (HH:mm), else Date (MMM dd).
+ * Dynamically adjusts the time format based on the visible zoom level:
+ * - Zoomed out (>2 days): "MMM dd"
+ * - Normal daily view: "HH:mm"
+ * - Zoomed in (<1h visible): "HH:mm:ss"
  */
 class DateAxisFormatter(
     var isDailyResource: Boolean = true,
@@ -17,36 +19,50 @@ class DateAxisFormatter(
     var chart: com.github.mikephil.charting.charts.LineChart? = null
 ) : ValueFormatter() {
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
-    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM").withZone(ZoneId.systemDefault())
+    private val timeSecondsFormatter = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
+    private val dateFormatter = DateTimeFormatter.ofPattern("MMM dd").withZone(ZoneId.systemDefault())
+    private val dateTimeFormatter = DateTimeFormatter.ofPattern("MMM dd HH:mm").withZone(ZoneId.systemDefault())
+
+    // Cache to prevent GC thrashing and CPU overload during pan/zoom
+    private val formatCache = android.util.LruCache<Long, String>(250)
+    private var lastFormatMode: Int = -1
 
     override fun getFormattedValue(value: Float): String {
         return try {
-            // Re-add baseline to the offset value to get the actual timestamp
             val seconds = (value * timeScale).toLong() + baselineX
             
-            // SNAPPING LOGIC: Round to nearest logical interval
-            // 1h range -> snap to 10m (600s)
-            // 24h range -> snap to 30m (1800s)
-            // Longer -> snap to day
-            
+            // Determine visible range in seconds
             val visibleSeconds = chart?.let { it.visibleXRange * timeScale } ?: Float.MAX_VALUE
-            val isEffectivelyDaily = if (chart != null) visibleSeconds <= 24 * 3600 else isDailyResource
             
-            val snapInterval = if (isEffectivelyDaily) {
-                if (seconds % 3600 == 0L) 3600L // Already on hour
-                else 600L // snap to 10 min
-            } else {
-                3600L // snap to hour for date ranges
+            // Choose format mode based on zoom level
+            val formatMode = when {
+                visibleSeconds <= 1800  -> 0       // <30min: show HH:mm:ss
+                visibleSeconds <= 2 * 86400 -> 1   // <2d: show HH:mm
+                visibleSeconds <= 7 * 86400 -> 3   // <7d: show "MMM dd HH:mm"
+                else -> 2                          // >7d: show "MMM dd"
             }
 
-            val roundedSeconds = (seconds + (snapInterval / 2)) / snapInterval * snapInterval
-            val instant = Instant.ofEpochSecond(roundedSeconds)
-            
-            if (isEffectivelyDaily) {
-                timeFormatter.format(instant)
-            } else {
-                dateFormatter.format(instant)
+            // Clear cache if format mode changed
+            if (lastFormatMode != formatMode) {
+                formatCache.evictAll()
+                lastFormatMode = formatMode
             }
+            
+            val cachedValue = formatCache.get(seconds)
+            if (cachedValue != null) return cachedValue
+
+            val instant = Instant.ofEpochSecond(seconds)
+            
+            val result = when (formatMode) {
+                0 -> timeSecondsFormatter.format(instant)     // HH:mm:ss
+                1 -> timeFormatter.format(instant)            // HH:mm
+                2 -> dateFormatter.format(instant)            // MMM dd
+                3 -> dateTimeFormatter.format(instant)        // MMM dd HH:mm
+                else -> timeFormatter.format(instant)
+            }
+            
+            formatCache.put(seconds, result)
+            return result
         } catch (e: Exception) {
             value.toString()
         }

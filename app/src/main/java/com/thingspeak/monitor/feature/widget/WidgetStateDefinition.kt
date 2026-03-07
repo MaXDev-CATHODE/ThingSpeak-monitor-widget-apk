@@ -11,34 +11,11 @@ import java.io.File
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+import androidx.glance.state.PreferencesGlanceStateDefinition
+
 /**
- * Custom GlanceStateDefinition using DataStore Preferences.
- * Re-implemented to use standard context.preferencesDataStoreFile path management
- * and crucially caches instances to prevent Multiple DataStore instances exceptions.
+ * Standard GlanceStateDefinition for DataStore Preferences.
+ * Using the built-in PreferencesGlanceStateDefinition is safer for multi-process
+ * consistency as it doesn't try to manually cache instances in a way that breaks sync.
  */
-object WidgetPreferencesStateDefinition : GlanceStateDefinition<Preferences> {
-
-    private const val DATA_STORE_FILENAME_PREFIX = "glance_widget_"
-    private val dataStores = mutableMapOf<String, DataStore<Preferences>>()
-    private val mutex = Mutex()
-
-    override suspend fun getDataStore(
-        context: Context,
-        fileKey: String,
-    ): DataStore<Preferences> {
-        return mutex.withLock {
-            dataStores.getOrPut(fileKey) {
-                PreferenceDataStoreFactory.create {
-                    context.preferencesDataStoreFile(DATA_STORE_FILENAME_PREFIX + fileKey)
-                }
-            }
-        }
-    }
-
-    override fun getLocation(
-        context: Context,
-        fileKey: String,
-    ): File {
-        return context.preferencesDataStoreFile(DATA_STORE_FILENAME_PREFIX + fileKey)
-    }
-}
+object WidgetPreferencesStateDefinition : GlanceStateDefinition<Preferences> by PreferencesGlanceStateDefinition

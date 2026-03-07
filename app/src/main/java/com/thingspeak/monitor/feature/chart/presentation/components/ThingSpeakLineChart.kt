@@ -25,6 +25,7 @@ fun ThingSpeakLineChart(
     isDailyRange: Boolean,
     baselineX: Long,
     timeScale: Float = 1f,
+    onInteraction: (isActive: Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val axisColor = MaterialTheme.colorScheme.onSurface.toArgb()
@@ -40,20 +41,24 @@ fun ThingSpeakLineChart(
 
     AndroidView(
         modifier = modifier
-            .fillMaxSize()
-            .pointerInteropFilter { event ->
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        chartView?.parent?.requestDisallowInterceptTouchEvent(true)
-                    }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        chartView?.parent?.requestDisallowInterceptTouchEvent(false)
-                    }
-                }
-                false
-            },
+            .fillMaxSize(),
         factory = { context ->
             LineChart(context).apply {
+                // Handle touch to prevent LazyColumn from intercepting during chart interaction
+                // AND notify Compose about the interaction state for Z-Index elevation
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                            v.parent?.requestDisallowInterceptTouchEvent(true)
+                            onInteraction(true)
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            v.parent?.requestDisallowInterceptTouchEvent(false)
+                            onInteraction(false)
+                        }
+                    }
+                    false // Return false to allow LineChart's internal touch handling
+                }
                 layoutParams = android.view.ViewGroup.LayoutParams(
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -69,7 +74,13 @@ fun ThingSpeakLineChart(
                 setScaleEnabled(true)
                 setPinchZoom(true)
                 
-                legend.textColor = axisColor
+                legend.apply {
+                    textColor = axisColor
+                    verticalAlignment = com.github.mikephil.charting.components.Legend.LegendVerticalAlignment.TOP
+                    horizontalAlignment = com.github.mikephil.charting.components.Legend.LegendHorizontalAlignment.LEFT
+                    orientation = com.github.mikephil.charting.components.Legend.LegendOrientation.HORIZONTAL
+                    setDrawInside(false)
+                }
                 
                 val thisChart = this
                 xAxis.apply {
@@ -77,9 +88,9 @@ fun ThingSpeakLineChart(
                     formatter.chart = thisChart
                     valueFormatter = formatter
                     isGranularityEnabled = true
-                    // Small granularity for daily, larger for historical
-                    granularity = if (isDailyRange) 600f else 3600f 
-                    setLabelCount(6, false)
+                    // Daily: 10 mins granularity. Historical: 1 day granularity.
+                    granularity = if (isDailyRange) 600f else 86400f 
+                    setLabelCount(5, true) // Force 5 labels to prevent overlap
                     setAvoidFirstLastClipping(true)
                     setDrawGridLines(true)
                     this.gridColor = gridColor
@@ -99,9 +110,20 @@ fun ThingSpeakLineChart(
                 setNoDataTextColor(axisColor)
 
                 // PREVENT CLIPPING: Add extra offsets around the chart area
-                setExtraOffsets(12f, 16f, 12f, 16f)
+                // Z-Index mechanism handles overflow; keep offsets balanced
+                setExtraOffsets(16f, 30f, 16f, 20f)
 
-                // Pre-create marker to avoid allocations in update loop
+                // Disable clipping so marker can draw outside content area
+                clipChildren = false
+                clipToPadding = false
+
+                // FORCE MARKERS
+                setDrawMarkers(true)
+                setHighlightPerTapEnabled(true)
+
+                // Create marker but do NOT bind chartView here.
+                // At factory time the chart has width=0, height=0 (not laid out yet).
+                // Binding happens in the update lambda below.
                 marker = ThingSpeakMarkerView(context, isDailyRange, baselineX, timeScale)
             }
         },
@@ -112,8 +134,18 @@ fun ThingSpeakLineChart(
             chart.xAxis.gridColor = gridColor
             chart.axisLeft.gridColor = gridColor
             chart.xAxis.valueFormatter = formatter
-            (chart.marker as? ThingSpeakMarkerView)?.baselineX = baselineX
-            (chart.marker as? ThingSpeakMarkerView)?.timeScale = timeScale
+            
+            // RE-APPLY Axis constraints to prevent overlapping labels during updates
+            chart.xAxis.apply {
+                granularity = if (isDailyRange) 600f else 86400f
+                setLabelCount(5, true)
+            }
+            (chart.marker as? ThingSpeakMarkerView)?.apply {
+                this.baselineX = baselineX
+                this.timeScale = timeScale
+                // Bind chartView on every update - chart is laid out here with real dimensions
+                this.chartView = chart
+            }
             
             val currentHash = lineData.hashCode()
             if (currentHash != lastDataHash) {
@@ -125,22 +157,16 @@ fun ThingSpeakLineChart(
                 
                 // PERFORMANCE: Assign new data directly; avoiding `.clear()` 
                 // as it triggers a full requestLayout() which crashes Compose's measurement phase during scrolling.
-                chart.data = lineData
-                chart.notifyDataSetChanged()
-                
                 if (!isIncrementalUpdate) {
                     chart.fitScreen()
+                    chart.xAxis.apply {
+                        valueFormatter = formatter
+                    }
                 }
-
-                // PERFORMANCE: Animate ONLY on initial load (lastDataHash was 0)
-                // Avoid animations during scrolling or minor updates to prevent OOM/Lag
-                if (lineData.entryCount > 0 && !isIncrementalUpdate && lastDataHash == currentHash && lastDataHash != 0) {
-                    // We only animate if it's a truly new dataset and not just a recomposition
-                    // For now, let's just invalidate to be safe and fast during scroll
-                    chart.invalidate()
-                } else {
-                    chart.invalidate()
-                }
+                
+                chart.data = lineData
+                chart.notifyDataSetChanged()
+                chart.invalidate()
             } else {
                 chart.invalidate()
             }

@@ -23,6 +23,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.isSystemInDarkTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.first
 
 /**
  * Main application activity — UI entry point.
@@ -54,6 +55,27 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = androidx.compose.material3.MaterialTheme.colorScheme.background
                 ) {
+                    val isWorkerScheduled by appPreferences.observeIsWorkerScheduled()
+                        .collectAsStateWithLifecycle(initialValue = true) // Default true to avoid double-scheduling
+
+                    androidx.compose.runtime.LaunchedEffect(isWorkerScheduled) {
+                        if (!isWorkerScheduled) {
+                            val context = this@MainActivity
+                            val interval = appPreferences.observeSyncInterval().first()
+                            com.thingspeak.monitor.core.worker.DataSyncWorker.schedule(context, interval)
+                            appPreferences.setIsWorkerScheduled(true)
+                        }
+                    }
+
+                    val isHighFreqByApp by appPreferences.observeIsHighFrequencyEnabled()
+                        .collectAsStateWithLifecycle(initialValue = false)
+
+                    androidx.compose.runtime.LaunchedEffect(isHighFreqByApp) {
+                        if (isHighFreqByApp) {
+                            com.thingspeak.monitor.core.worker.DataSyncService.start(this@MainActivity)
+                        }
+                    }
+
                     NotificationPermissionTarget()
                     NavGraph()
                 }

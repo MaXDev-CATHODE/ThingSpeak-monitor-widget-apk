@@ -50,7 +50,8 @@ class ChannelPreferences @Inject constructor(
         val chartProcessingPeriod: Int = 0, // hours
         val lastSyncTime: Long = 0L,
         val preferredChartFields: Set<Int>? = null,
-        val chartField: Int = 1
+        val chartField: Int = 1,
+        val lastProcessedEntryId: Long = 0L
     )
 
     private val helper = DataStoreListHelper(

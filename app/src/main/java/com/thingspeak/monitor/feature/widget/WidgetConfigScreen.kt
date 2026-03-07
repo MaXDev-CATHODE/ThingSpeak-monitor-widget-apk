@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -75,18 +76,34 @@ fun WidgetConfigScreen(
     initialVisibleFields: Set<Int>? = null,
     initialChartField: Int? = null,
     initialIsGlass: Boolean? = null,
+    initialChartTimespan: Int? = null,
     isSaving: Boolean = false,
     isGridMode: Boolean = false,
     availableChannels: List<com.thingspeak.monitor.core.datastore.ChannelPreferences.SavedChannel> = emptyList(),
     onRefreshRequest: ((Long, String) -> Unit)? = null,
-    onSave: (channelId: Long, apiKey: String, channelName: String, bgColor: String?, transparency: Float, fontSize: Int, visibleFields: Set<Int>, chartField: Int, isGlass: Boolean) -> Unit,
+    onSave: (channelId: Long, apiKey: String, channelName: String, bgColor: String?, transparency: Float, fontSize: Int, visibleFields: Set<Int>, chartField: Int, isGlass: Boolean, chartTimespan: Int) -> Unit,
 ) {
     var channelIdText by remember { mutableStateOf(initialChannelId?.toString() ?: "") }
     var apiKey by remember { mutableStateOf(initialApiKey ?: "") }
     var channelName by remember { mutableStateOf(initialChannelName ?: "") }
     var channelIdError by remember { mutableStateOf(false) }
     var apiKeyVisible by remember { mutableStateOf(false) }
-    var visibleFields by remember { mutableStateOf(initialVisibleFields ?: (1..8).toSet()) }
+    
+    var visibleFields by remember(initialVisibleFields) { 
+        mutableStateOf(initialVisibleFields ?: if (isGridMode) (1..4).toSet() else (1..8).toSet()) 
+    }
+    
+    // Snajperska poprawka V4: Jesli jestesmy w trybie Grid, usuwamy pola o numerach > 4, 
+    // ktore mogly zostac ze starej konfiguracji i "po cichu" blokowac limit 4 pol.
+    LaunchedEffect(isGridMode) {
+        if (isGridMode) {
+            val filtered = visibleFields.filter { it in 1..4 }.toSet()
+            if (filtered.size != visibleFields.size) {
+                android.util.Log.d("SNIPER_V4", "Filtering hidden fields from ${visibleFields.size} to ${filtered.size}")
+                visibleFields = if (filtered.isEmpty()) (1..4).toSet() else filtered
+            }
+        }
+    }
     var chartField by remember { mutableIntStateOf(initialChartField ?: 1) }
 
     // Style settings
@@ -94,6 +111,7 @@ fun WidgetConfigScreen(
     var transparency by remember { mutableStateOf(initialTransparency ?: 1.0f) }
     var fontSize by remember { mutableStateOf(initialFontSize?.toFloat() ?: 12f) }
     var isGlass by remember { mutableStateOf(initialIsGlass ?: false) }
+    var chartTimespan by remember { mutableStateOf(initialChartTimespan?.toFloat() ?: 24f) }
 
     var showVisualOptions by remember { mutableStateOf(false) }
     var showManualEntry by remember { mutableStateOf(availableChannels.isEmpty()) }
@@ -101,7 +119,7 @@ fun WidgetConfigScreen(
     val channelIdValue = channelIdText.toLongOrNull()
     val isChannelIdValid = channelIdValue != null && channelIdValue > 0
     val isApiKeyValid = apiKey.isBlank() || apiKey.length >= 16 
-    val isFieldsValid = if (isGridMode) visibleFields.size == 2 || visibleFields.size == 4 else visibleFields.isNotEmpty()
+    val isFieldsValid = if (isGridMode) visibleFields.size in 1..4 else visibleFields.isNotEmpty()
     val isValid = isChannelIdValid && isApiKeyValid && isFieldsValid
 
     val textColor = if (androidx.compose.foundation.isSystemInDarkTheme()) Color.White else MaterialTheme.colorScheme.onSurface
@@ -155,9 +173,11 @@ fun WidgetConfigScreen(
                                 selectedColorHex = ch.widgetBgColorHex
                                 transparency = ch.widgetTransparency
                                 fontSize = ch.widgetFontSize.toFloat()
-                                visibleFields = ch.widgetVisibleFields ?: (1..8).toSet()
+                                visibleFields = ch.widgetVisibleFields?.let { if (isGridMode && it.size > 4) it.take(4).toSet() else it } 
+                                    ?: if (isGridMode) (1..4).toSet() else (1..8).toSet()
                                 isGlass = ch.isGlassmorphismEnabled
                                 chartField = ch.chartField
+                                chartTimespan = (ch.chartProcessingPeriod.takeIf { it > 0 } ?: 24).toFloat()
                                 
                                 if (ch.fieldNames.isEmpty()) {
                                     onRefreshRequest?.invoke(ch.id, ch.apiKey ?: "")
@@ -182,13 +202,13 @@ fun WidgetConfigScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = ch.name.ifBlank { "Channel ${ch.id}" },
+                                    text = ch.name.ifBlank { stringResource(R.string.widget_channel_default_name, ch.id) },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else textColor,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                                 Text(
-                                    text = "ID: ${ch.id}",
+                                    text = stringResource(R.string.widget_id_format, ch.id),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = (if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else textColor).copy(alpha = 0.7f)
                                 )
@@ -230,7 +250,7 @@ fun WidgetConfigScreen(
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Manual Configuration",
+                text = stringResource(R.string.widget_manual_config),
                 style = MaterialTheme.typography.titleSmall,
                 color = textColor.copy(alpha = 0.8f),
                 modifier = Modifier.weight(1f)
@@ -313,7 +333,7 @@ fun WidgetConfigScreen(
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Styling & Visual Options",
+                text = stringResource(R.string.widget_styling_options),
                 style = MaterialTheme.typography.titleSmall,
                 color = textColor.copy(alpha = 0.8f),
                 modifier = Modifier.weight(1f)
@@ -377,6 +397,18 @@ fun WidgetConfigScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(stringResource(R.string.widget_glassmorphism), style = MaterialTheme.typography.bodyMedium, color = textColor)
             }
+            
+            if (!isGridMode) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Chart Timespan: ${chartTimespan.toInt()} Hours", style = MaterialTheme.typography.bodySmall, color = textColor)
+                Slider(
+                    value = chartTimespan,
+                    onValueChange = { chartTimespan = it },
+                    valueRange = 1f..72f,
+                    steps = 70, // 71 intervals between 1 and 72
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -388,7 +420,7 @@ fun WidgetConfigScreen(
             Text(stringResource(R.string.widget_visible_fields), style = MaterialTheme.typography.titleMedium, color = textColor)
             if (isGridMode) {
                 Text(
-                    text = "Select exactly 2 or 4 fields for the grid layout.",
+                    text = stringResource(R.string.widget_grid_fields_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isFieldsValid) textColor.copy(alpha = 0.7f) else MaterialTheme.colorScheme.error
                 )
@@ -396,7 +428,9 @@ fun WidgetConfigScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             Column {
-                val availableFieldNumbers = if (currentFieldNames.isNotEmpty()) currentFieldNames.keys.sorted() else (1..8).toList()
+                // In Grid Mode, we always want to allow selecting any of the 8 fields 
+                // because even if unnamed, they might exist.
+                val availableFieldNumbers = if (isGridMode) (1..8).toList() else (if (currentFieldNames.isNotEmpty()) currentFieldNames.keys.sorted() else (1..8).toList())
                 val chunkedRows = availableFieldNumbers.chunked(2)
                 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -409,11 +443,16 @@ fun WidgetConfigScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                     androidx.compose.material3.Checkbox(
                                         checked = visibleFields.contains(f1),
+                                        enabled = visibleFields.contains(f1) || visibleFields.size < 4 || !isGridMode,
                                         onCheckedChange = { isChecked ->
-                                            visibleFields = if (isChecked) visibleFields + f1 else visibleFields - f1
+                                            if (isChecked) {
+                                                visibleFields = visibleFields + f1
+                                            } else {
+                                                visibleFields = visibleFields - f1
+                                            }
                                         }
                                     )
-                                    val name1 = currentFieldNames[f1]?.takeIf { it.isNotBlank() } ?: "Field $f1"
+                                    val name1 = currentFieldNames[f1]?.takeIf { it.isNotBlank() } ?: stringResource(R.string.widget_field_name, f1)
                                     Text(text = name1, style = MaterialTheme.typography.bodySmall, color = textColor, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 }
                             } else {
@@ -424,11 +463,16 @@ fun WidgetConfigScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                     androidx.compose.material3.Checkbox(
                                         checked = visibleFields.contains(f2),
+                                        enabled = visibleFields.contains(f2) || visibleFields.size < 4 || !isGridMode,
                                         onCheckedChange = { isChecked ->
-                                            visibleFields = if (isChecked) visibleFields + f2 else visibleFields - f2
+                                            if (isChecked) {
+                                                visibleFields = visibleFields + f2
+                                            } else {
+                                                visibleFields = visibleFields - f2
+                                            }
                                         }
                                     )
-                                    val name2 = currentFieldNames[f2]?.takeIf { it.isNotBlank() } ?: "Field $f2"
+                                    val name2 = currentFieldNames[f2]?.takeIf { it.isNotBlank() } ?: stringResource(R.string.widget_field_name, f2)
                                     Text(text = name2, style = MaterialTheme.typography.bodySmall, color = textColor, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 }
                             } else {
@@ -458,7 +502,8 @@ fun WidgetConfigScreen(
                             fontSize.toInt(), 
                             visibleFields,
                             chartField,
-                            isGlass
+                            isGlass,
+                            chartTimespan.toInt()
                         )
                     }
                 },
@@ -506,6 +551,6 @@ fun WidgetConfigScreen(
 @Composable
 private fun WidgetConfigScreenPreview() {
     MaterialTheme {
-        WidgetConfigScreen(onSave = { _, _, _, _, _, _, _, _, _ -> })
+        WidgetConfigScreen(onSave = { _, _, _, _, _, _, _, _, _, _ -> })
     }
 }
