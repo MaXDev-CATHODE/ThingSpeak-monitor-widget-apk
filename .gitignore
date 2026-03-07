@@ -2,6 +2,8 @@
 .bin/
 .agent/
 .kluster/
+.vscode/
+platform-tools/
 local.properties
 .idea/
 .gradle/
@@ -14,6 +16,7 @@ captures/
 .cxx
 google-services.json
 .gitlab-ci.yml
+build_release.bat
 
 # --- Pliki binarne i klucze podpisywania ---
 *.jks
