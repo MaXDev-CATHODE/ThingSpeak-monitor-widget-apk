@@ -35,3 +35,15 @@
 
 # MPAndroidChart
 -keep class com.github.mikephil.charting.** { *; }
+
+# Google Play Services / AdMob
+-keep class com.google.android.gms.ads.** { *; }
+-keep interface com.google.android.gms.ads.** { *; }
+-dontwarn com.google.android.gms.ads.**
+-dontwarn com.google.android.gms.internal.ads.**
+
+# Generic Android/GMS fragments that might be referenced
+-dontwarn com.google.android.gms.**
+
+# Force ignore warnings for R8 to allow building with missing optional GMS classes
+-ignorewarnings

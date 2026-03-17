@@ -139,6 +139,24 @@ class DashboardViewModel @Inject constructor(
             }
         }
     }
+
+    /** Updates an existing channel's details. */
+    fun updateChannel(id: Long, name: String, apiKey: String?) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val existingChannels = channelPreferences.observe().first()
+                val existing = existingChannels.find { it.id == id }
+                if (existing != null) {
+                    channelPreferences.save(existing.copy(name = name, apiKey = apiKey))
+                    // Optionally refresh after update to confirm new API key works
+                    getChannelFeedUseCase.refresh(id, apiKey)
+                }
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
     
     /** Refreshes data for all channels with concurrency protection. */
     fun refreshAll() {

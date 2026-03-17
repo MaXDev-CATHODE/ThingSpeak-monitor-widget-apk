@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * Typografia ThingSpeak Monitor — czytelna i techniczna.
+ * ThingSpeak Monitor typography — readable and technical.
  *
  * Based on the default system font, with adjusted weights.
  */

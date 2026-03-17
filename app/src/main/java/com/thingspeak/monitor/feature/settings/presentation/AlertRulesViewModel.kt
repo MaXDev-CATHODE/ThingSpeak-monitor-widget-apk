@@ -8,6 +8,7 @@ import com.thingspeak.monitor.feature.channel.data.local.AlertRuleEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 data class AlertRulesUiState(
@@ -25,11 +26,24 @@ class AlertRulesViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(AlertRulesUiState())
     val uiState: StateFlow<AlertRulesUiState> = _uiState.asStateFlow()
 
+    private var channelJob: Job? = null
+    private var rulesJob: Job? = null
+
     fun loadChannel(channelId: Long) {
-        viewModelScope.launch {
-            val channel = channelPrefs.observe().first().find { it.id == channelId }
-            _uiState.update { it.copy(channel = channel) }
-            
+        channelJob?.cancel()
+        rulesJob?.cancel()
+        
+        _uiState.update { it.copy(isLoading = true, rules = emptyList(), channel = null) }
+        
+        channelJob = viewModelScope.launch {
+            channelPrefs.observe()
+                .map { channels -> channels.find { it.id == channelId } }
+                .collect { channel ->
+                    _uiState.update { it.copy(channel = channel) }
+                }
+        }
+
+        rulesJob = viewModelScope.launch {
             alertRuleDao.observeRulesForChannel(channelId).collect { rules ->
                 _uiState.update { it.copy(rules = rules, isLoading = false) }
             }
@@ -72,4 +86,5 @@ class AlertRulesViewModel @Inject constructor(
             )
         }
     }
+
 }

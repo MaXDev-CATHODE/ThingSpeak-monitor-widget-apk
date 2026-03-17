@@ -49,7 +49,7 @@ fun ValueGridContent(context: Context, data: WidgetData) {
             .background(bgColor)
             .cornerRadius(16.dp),
     ) {
-        // Nagłówek - bardziej kompaktowy w małych widżetach
+        // Header - more compact in small widgets
         Row(
             modifier = GlanceModifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = if (isSmallHeight) 0.dp else 4.dp),
             verticalAlignment = Alignment.CenterVertically,

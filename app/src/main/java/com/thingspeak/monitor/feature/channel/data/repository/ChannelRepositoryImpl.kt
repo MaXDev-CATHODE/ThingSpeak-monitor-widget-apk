@@ -168,7 +168,7 @@ class ChannelRepositoryImpl @Inject constructor(
                     val existing = existingChannels.find { it.id == channelId }
                     
                     val updatedChannel = (existing ?: ChannelPreferences.SavedChannel(id = channelId, name = channelDomain.name)).copy(
-                        name = channelDomain.name,
+                        name = existing?.name ?: channelDomain.name,
                         apiKey = apiKey,
                         fieldNames = channelDomain.fieldNames,
                         lastSyncStatus = "SUCCESS",

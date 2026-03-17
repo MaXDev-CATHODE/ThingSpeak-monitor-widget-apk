@@ -166,5 +166,9 @@
     <string name="settings_high_freq_1m">1 Minute</string>
     <string name="settings_high_freq_5m">5 Minutes</string>
     <string name="settings_high_freq_10m">10 Minutes</string>
+    <string name="alert_edit_channel">Edit Channel</string>
+    <string name="alert_edit_channel_title">Edit Channel Details</string>
+    <string name="alert_save_channel">Save Changes</string>
+    <string name="edit_channel_title">Edit Channel</string>
 </resources>
 

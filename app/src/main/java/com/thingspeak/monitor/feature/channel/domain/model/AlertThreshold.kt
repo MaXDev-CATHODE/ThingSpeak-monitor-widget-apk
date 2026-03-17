@@ -1,10 +1,10 @@
 package com.thingspeak.monitor.feature.channel.domain.model
 
 /**
- * Model domenowy progu alertu per field.
+ * Domain model of an alert threshold per field.
  *
  * When the field value exceeds [minValue] or [maxValue],
- * system wyemituje local notification.
+ * the system will emit a local notification.
  */
 data class AlertThreshold(
     val channelId: Long,

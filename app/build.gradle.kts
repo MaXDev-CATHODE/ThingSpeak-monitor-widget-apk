@@ -67,7 +67,8 @@ android {
             tempKeystore.deleteOnExit()
             sFile = tempKeystore
         } else if (storeFileVar != null) {
-            sFile = file(storeFileVar)
+            val f = File(storeFileVar)
+            sFile = if (f.isAbsolute) f else rootProject.file(storeFileVar)
         }
 
         val sPassword = System.getenv("RELEASE_STORE_PASSWORD") ?: localProperties.getProperty("releaseStorePassword")
@@ -98,6 +99,8 @@ android {
             )
         }
     }
+
+
 
     lint {
         abortOnError = false
@@ -139,6 +142,8 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
+
+
 
     // ── Network (Retrofit + OkHttp + kotlinx.serialization) ──────
     implementation(libs.retrofit)

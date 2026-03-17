@@ -8,9 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
- * Design System — Motyw aplikacji ThingSpeak Monitor.
+ * Design System — ThingSpeak Monitor app theme.
  *
- * Wykorzystuje Material 3 z oddzielonymi paletami dla Dark i Light Mode.
+ * Uses Material 3 with separate palettes for Dark and Light Mode.
  * Color palette inspired by IoT / technical dashboard greens.
  */
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -30,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thingspeak.monitor.R
 import com.thingspeak.monitor.feature.dashboard.presentation.components.AddChannelDialog
+import com.thingspeak.monitor.core.ui.components.EditChannelDialog
 import com.thingspeak.monitor.feature.dashboard.presentation.components.DashboardContent
 import kotlinx.coroutines.flow.collectLatest
 
@@ -61,6 +63,7 @@ fun DashboardScreen(
     
     var showAddDialog by remember { mutableStateOf(false) }
     var channelToDelete by remember { mutableStateOf<Long?>(null) }
+    var channelToEdit by remember { mutableStateOf<com.thingspeak.monitor.core.datastore.ChannelPreferences.SavedChannel?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
@@ -104,6 +107,17 @@ fun DashboardScreen(
                 TextButton(onClick = { channelToDelete = null }) {
                     Text(stringResource(R.string.dialog_cancel))
                 }
+            }
+        )
+    }
+
+    channelToEdit?.let { channel ->
+        EditChannelDialog(
+            channel = channel,
+            onDismiss = { channelToEdit = null },
+            onConfirm = { id, name, apiKey ->
+                viewModel.updateChannel(id, name, apiKey)
+                channelToEdit = null
             }
         )
     }
@@ -170,6 +184,7 @@ fun DashboardScreen(
                     onNavigateToChart = onNavigateToChart,
                     onNavigateToChannelSettings = onNavigateToChannelSettings,
                     onRemoveChannel = { channelToDelete = it },
+                    onEditChannel = { channelToEdit = it },
                     modifier = Modifier.fillMaxSize()
                 )
             }

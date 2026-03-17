@@ -1,7 +1,7 @@
 package com.thingspeak.monitor.feature.channel.domain.model
 
 /**
- * Model domenowy zaawansowanej reguły alertu.
+ * Domain model of an advanced alert rule.
  */
 data class AlertRule(
     val id: Long = 0,

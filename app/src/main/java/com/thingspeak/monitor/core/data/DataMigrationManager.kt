@@ -12,7 +12,7 @@ import javax.inject.Singleton
 
 /**
  * Manages data migration between different sources (e.g., DataStore -> Room).
- * Wykonywane jednorazowo przy starcie aplikacji lub po aktualizacji.
+ * Executed once at app startup or after an update.
  */
 @Singleton
 class DataMigrationManager @Inject constructor(

@@ -23,6 +23,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.ui.draw.clip
 import com.thingspeak.monitor.core.ui.shimmer
+import com.thingspeak.monitor.core.datastore.ChannelPreferences
 
 /**
  * Main dashboard content list.
@@ -36,6 +37,7 @@ fun DashboardContent(
     onNavigateToChart: (Long, String, String?) -> Unit,
     onNavigateToChannelSettings: (Long) -> Unit,
     onRemoveChannel: (Long) -> Unit,
+    onEditChannel: (ChannelPreferences.SavedChannel) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (uiState.channels.isEmpty()) {
@@ -65,6 +67,7 @@ fun DashboardContent(
                     onClick = { onNavigateToChart(it.id, it.name, it.apiKey) },
                     onRemoveClick = onRemoveChannel,
                     onSettingsClick = onNavigateToChannelSettings,
+                    onEditClick = onEditChannel,
                     modifier = Modifier.animateItem()
                 )
             }

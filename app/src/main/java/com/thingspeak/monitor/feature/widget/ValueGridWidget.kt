@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import com.thingspeak.monitor.feature.channel.domain.model.Channel
+import com.thingspeak.monitor.core.di.WidgetEntryPoint
+import com.thingspeak.monitor.core.worker.DataSyncWorker
 
 class ValueGridWidget : GlanceAppWidget() {
     
@@ -53,11 +55,11 @@ class ValueGridWidget : GlanceAppWidget() {
             
             val entryPoint = EntryPointAccessors.fromApplication(
                 context.applicationContext, 
-                com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
+                WidgetEntryPoint::class.java
             )
             val bindingRepo = entryPoint.widgetBindingRepository()
             
-            // produceState key: appWidgetId + prefs (to react to config changes)
+            // produceState key: appWidgetId + prefs (to react to configuration changes)
             val state by androidx.compose.runtime.produceState<WidgetData?>(
                 initialValue = WidgetData(channelName = "", channelId = -1L, entry = null, isLoading = true, debugInfo = "Initializing..."), 
                 appWidgetId,
@@ -69,7 +71,7 @@ class ValueGridWidget : GlanceAppWidget() {
                 // AUDIT_V11: Tracking produceState lifecycle
                 android.util.Log.d("AUDIT_V11", "ValueGrid [START] for appWidgetId=$appWidgetId")
                 
-                // Fail-safe: jesli po 7 sekundach nadal nic nie mamy, przerywamy stan ladowania
+                // Fail-safe: if after 7 seconds we still have nothing, stop the loading state
                 val job = launch {
                     kotlinx.coroutines.delay(7000)
                     if (value?.isLoading == true) {
@@ -82,23 +84,37 @@ class ValueGridWidget : GlanceAppWidget() {
                     android.util.Log.d("AUDIT_V11", "ValueGrid [ID_RESOLVED] appWidgetId=$appWidgetId -> effectiveId=$effectiveId")
                     if (effectiveId <= 0L) {
                         android.util.Log.e("AUDIT_V11", "ValueGrid [NO_ID] Aborting data stream for $appWidgetId")
-                        value = value?.copy(debugInfo = "No ID resolved (Check Config)")
+                        value = value?.copy(debugInfo = "No ID resolved (Check configuration)")
                         return@collectLatest
                     }
                     
-                    value = value?.copy(debugInfo = "ID Resolved: $effectiveId. Waiting for Data...")
+                    // V11: Immediate channel ID update to switch UI from loading to the widget skeleton
+                    value = value?.copy(
+                        channelId = effectiveId,
+                        debugInfo = "ID Resolved: $effectiveId. Waiting for data..."
+                    )
                     
-                    val entries = dao.observeLastEntry(effectiveId).firstOrNull() ?: emptyList()
-                    val channelData = repository.observeChannel(effectiveId).firstOrNull()
-                    val alerts = repository.observeAlerts(effectiveId).firstOrNull() ?: emptyList()
-                    val syncInterval = entryPoint.appPreferences().observeSyncInterval().firstOrNull() ?: 30L
-                    
-                    android.util.Log.v("AUDIT_V11", "ValueGrid [COMBINE] Data arrived for $effectiveId: entries=${entries.size}, channel=${channelData != null}")
-                    // V9 INSTANT SPEED: If we have ID, we MUST return data, even if metadata is null
-                    val loadedData = loadWidgetData(context, effectiveId, prefs, entries, channelData, alerts, syncInterval)
-                    
-                    android.util.Log.d("AUDIT_V11", "ValueGrid [UPDATE_VALUE] for $effectiveId, entryTime=${loadedData.entry?.createdAt}")
-                    value = loadedData
+                    // V11: Reactive data observation from all sources
+                    kotlinx.coroutines.flow.combine(
+                        dao.observeLastEntry(effectiveId),
+                        repository.observeChannel(effectiveId),
+                        repository.observeAlerts(effectiveId),
+                        entryPoint.appPreferences().observeSyncInterval()
+                    ) { entries, channelData, alerts, syncInterval ->
+                        loadWidgetData(context, effectiveId, prefs, entries, channelData, alerts, syncInterval)
+                    }.collect { loadedData ->
+                        // V11.2 [100% Certainty]: Proactive synchronization via centralized orchestrator
+                        WidgetSyncOrchestrator.triggerSyncIfNeeded(
+                            context = context,
+                            channelId = effectiveId,
+                            entryPresent = loadedData.entry != null,
+                            lastSyncTime = loadedData.lastSyncTime,
+                            isRefreshing = loadedData.isRefreshing
+                        )
+                        
+                        android.util.Log.d("AUDIT_V11", "ValueGrid [REACTIVE_UPDATE] for $effectiveId, entryTime=${loadedData.entry?.createdAt}")
+                        value = loadedData
+                    }
                 }
             }
 
@@ -132,14 +148,20 @@ class ValueGridWidget : GlanceAppWidget() {
         android.util.Log.d("ValueGridWidget", "loadWidgetData: starting for $targetId (metadata present=${channelData != null})")
         val entryPoint = EntryPointAccessors.fromApplication(
             context.applicationContext, 
-            com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
+            WidgetEntryPoint::class.java
         )
         val checkAlerts = entryPoint.checkAlertThresholdsUseCase()
 
         val entry = entries.firstOrNull()
         
+        // V11: Observe style preferences from DataStore for immediate UI updates
+        val bgColorHex = prefs[stringPreferencesKey("bg_color")] ?: channelData?.widgetBgColorHex
+        val transparency = prefs[floatPreferencesKey("transparency")] ?: channelData?.widgetTransparency ?: 0.5f
+        val fontSize = prefs[intPreferencesKey("font_size")] ?: channelData?.widgetFontSize ?: 14
+        
         val visibleFields = prefs[androidx.datastore.preferences.core.stringSetPreferencesKey("visible_fields")]?.mapNotNull { it.toIntOrNull() }?.toSet()
-            ?: channelData?.widgetVisibleFields ?: emptySet()
+            // Default fields 1-8 for Grid widget as requested by the client
+            ?: channelData?.widgetVisibleFields ?: (1..8).toSet() 
 
         val activeAlertFields = if (entry != null) {
             val entryDomain = entry.toDomain()
@@ -159,9 +181,9 @@ class ValueGridWidget : GlanceAppWidget() {
             channelId = targetId,
             entry = entry,
             fieldNames = channelData?.fieldNames ?: emptyMap(),
-            bgColorHex = channelData?.widgetBgColorHex,
-            transparency = channelData?.widgetTransparency ?: 0.5f,
-            fontSize = channelData?.widgetFontSize ?: 14,
+            bgColorHex = bgColorHex,
+            transparency = transparency,
+            fontSize = fontSize,
             isGlass = isGlass,
             activeAlertFields = activeAlertFields,
             syncIntervalMinutes = syncInterval,
@@ -236,4 +258,3 @@ class GridEditAction : androidx.glance.appwidget.action.ActionCallback {
         }
     }
 }
-

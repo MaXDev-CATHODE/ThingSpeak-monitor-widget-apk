@@ -31,13 +31,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.getValue
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import com.thingspeak.monitor.feature.channel.domain.model.Channel
 
 /**
- * Glance widget displaying live ThingSpeak channel data.
+ * Glance widget displaying real-time ThingSpeak channel data.
  */
 class ThingSpeakGlanceWidget : GlanceAppWidget() {
 
@@ -68,7 +67,7 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
                 // AUDIT_V11: Tracking produceState lifecycle
                 android.util.Log.d("AUDIT_V11", "SmallWidget [START] for appWidgetId=$appWidgetId")
                 
-                // Fail-safe: jesli po 7 sekundach nadal nic nie mamy, przerywamy stan ladowania
+                // Fail-safe: if after 7 seconds we still have nothing, stop the loading state
                 val job = launch {
                     kotlinx.coroutines.delay(7000)
                     if (value?.isLoading == true) {
@@ -85,19 +84,33 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
                         return@collectLatest
                     }
                     
-                    value = value?.copy(debugInfo = "ID Resolved: $effectiveId. Waiting for Data...")
+                    // V11: Immediate channel ID update to switch UI from loading to the widget skeleton
+                    value = value?.copy(
+                        channelId = effectiveId,
+                        debugInfo = "ID Resolved: $effectiveId. Waiting for Data..."
+                    )
+                    
+                    // V11: Reactive data observation from all sources
+                    kotlinx.coroutines.flow.combine(
+                        dao.observeLatestFeedEntries(effectiveId, 500),
+                        repository.observeChannel(effectiveId),
+                        repository.observeAlerts(effectiveId),
+                        entryPoint.appPreferences().observeSyncInterval()
+                    ) { entries, channelObj, alerts, syncInterval ->
+                        loadWidgetData(context, effectiveId, prefs, entries, channelObj, alerts, syncInterval, value)
+                    }.collect { loadedData ->
+                        // V11.2 [100% Certainty]: Proactive synchronization via centralized orchestrator
+                        WidgetSyncOrchestrator.triggerSyncIfNeeded(
+                            context = context,
+                            channelId = effectiveId,
+                            entryPresent = loadedData.entry != null,
+                            lastSyncTime = loadedData.lastSyncTime,
+                            isRefreshing = loadedData.isRefreshing
+                        )
 
-                    val entries = dao.observeLatestFeedEntries(effectiveId, 500).firstOrNull() ?: emptyList()
-                    val channelObj = repository.observeChannel(effectiveId).firstOrNull()
-                    val alerts = repository.observeAlerts(effectiveId).firstOrNull() ?: emptyList()
-                    val syncInterval = entryPoint.appPreferences().observeSyncInterval().firstOrNull() ?: 30L
-                    
-                    android.util.Log.v("AUDIT_V11", "SmallWidget [COMBINE] Data arrived for $effectiveId: entries=${entries.size}, channel=${channelObj != null}")
-                    
-                    val loadedData = loadWidgetData(context, effectiveId, prefs, entries, channelObj, alerts, syncInterval)
-                    
-                    android.util.Log.d("AUDIT_V11", "SmallWidget [UPDATE_VALUE] for $effectiveId, entryTime=${loadedData.entry?.createdAt}")
-                    value = loadedData
+                        android.util.Log.v("AUDIT_V11", "SmallWidget [REACTIVE_UPDATE] for $effectiveId, entryTime=${loadedData.entry?.createdAt}")
+                        value = loadedData
+                    }
                 }
             }
 
@@ -109,9 +122,9 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
                 
                 when {
                     state == null -> WidgetConfigReqUI(context)
-                    // V9: Only show full-screen loading if we don't have a channelId yet
+                    // V9: Show full-screen loading only if we don't have a channel ID yet
                     currentId == -1L && currentLoading -> WidgetLoadingUI(context, debugInfo)
-                    // If we have ID but no entry yet, it's either "No Data" or background loading
+                    // If we have an ID but no entry, it's either no data or background loading
                     state?.entry == null && !currentLoading -> NoDataContent(context, state?.channelName ?: "")
                     else -> WidgetContent(context, state!!)
                 }
@@ -126,7 +139,8 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
         entries: List<com.thingspeak.monitor.feature.channel.data.local.FeedEntryEntity>,
         channelData: com.thingspeak.monitor.feature.channel.domain.model.Channel?,
         alerts: List<com.thingspeak.monitor.feature.channel.domain.model.AlertThreshold>,
-        syncInterval: Long
+        syncInterval: Long,
+        previousState: WidgetData? = null
     ): WidgetData {
         val entryPoint = EntryPointAccessors.fromApplication(
             context.applicationContext, 
@@ -142,97 +156,78 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
         val chartTimespanHours = prefs[intPreferencesKey("chart_timespan")] ?: channelData?.chartProcessingPeriod?.takeIf { it > 0 } ?: 24
         val referenceNow = System.currentTimeMillis()
         val cutoffTime = referenceNow - (chartTimespanHours * 60 * 60 * 1000L)
-
+        
+        // PERFORMANCE V11.2: Optimization skipping chart generation if data and visibility are identical
         val chartBitmap = if (entries.size >= 2) {
             val fieldsToPlot = visibleFields ?: (1..8).toSet()
-            val tempMap = fieldsToPlot.associateWith { mutableListOf<Pair<Long, Double>>() }
             
-            // Process entries once for all fields
-            entries.forEach { e ->
-                val time = WidgetUtils.parseIsoTime(e.createdAt) ?: return@forEach
-                if (time < cutoffTime) return@forEach
-                
-                fieldsToPlot.forEach { fieldNum ->
-                    val value = when(fieldNum) {
-                        1 -> e.field1?.toDoubleOrNull()
-                        2 -> e.field2?.toDoubleOrNull()
-                        3 -> e.field3?.toDoubleOrNull()
-                        4 -> e.field4?.toDoubleOrNull()
-                        5 -> e.field5?.toDoubleOrNull()
-                        6 -> e.field6?.toDoubleOrNull()
-                        7 -> e.field7?.toDoubleOrNull()
-                        8 -> e.field8?.toDoubleOrNull()
-                        else -> null
-                    }
-                    if (value != null) {
-                        tempMap[fieldNum]?.add(Pair(time, value))
-                    }
-                }
-            }
+            // Check if chart regeneration is required
+            val shouldRegenerate = previousState == null || 
+                                 previousState.visibleFields != visibleFields || 
+                                 previousState.entry?.createdAt != entry?.createdAt ||
+                                 previousState.chartBitmap == null
 
-            val dataMap = tempMap.mapValues { (_, rawPoints) ->
-                if (rawPoints.isEmpty()) return@mapValues emptyList<Pair<Long, Double>>()
-                
-                val allPointsInRange = rawPoints.sortedBy { it.first }
-                
-                // DISCRETE SAMPLING: 15 fixed time buckets for maximum clarity
-                val numBuckets = 15
-                val startTime = allPointsInRange.first().first
-                val endTime = allPointsInRange.last().first
-                val totalDataSpan = (endTime - startTime).let { if (it <= 0) 1L else it }
-                val bucketDuration = totalDataSpan / numBuckets
-                
-                val buckets = mutableListOf<Pair<Long, Double>>()
-                for (i in 0 until numBuckets) {
-                    val bStart = startTime + (i * bucketDuration)
-                    val bEnd = bStart + bucketDuration
-                    
-                    val pointsInBucket = allPointsInRange.filter { it.first in bStart..bEnd }
-                    if (pointsInBucket.isNotEmpty()) {
-                        val avg = pointsInBucket.map { it.second }.average()
-                        buckets.add(Pair(bStart + (bucketDuration / 2), avg))
+            if (shouldRegenerate) {
+                val tempMap = fieldsToPlot.associateWith { mutableListOf<Pair<Long, Double>>() }
+                entries.forEach { e ->
+                    val time = WidgetUtils.parseIsoTime(e.createdAt) ?: return@forEach
+                    if (time < cutoffTime) return@forEach
+                    fieldsToPlot.forEach { fieldNum ->
+                        val value = when(fieldNum) {
+                            1 -> e.field1?.toDoubleOrNull()
+                            2 -> e.field2?.toDoubleOrNull()
+                            3 -> e.field3?.toDoubleOrNull()
+                            4 -> e.field4?.toDoubleOrNull()
+                            5 -> e.field5?.toDoubleOrNull()
+                            6 -> e.field6?.toDoubleOrNull()
+                            7 -> e.field7?.toDoubleOrNull()
+                            8 -> e.field8?.toDoubleOrNull()
+                            else -> null
+                        }
+                        if (value != null) tempMap[fieldNum]?.add(Pair(time, value))
                     }
                 }
-                
-                // If buckets are too sparse, just use the raw points (capped at 50)
-                if (buckets.size < 3) {
-                    allPointsInRange.takeLast(50).sortedBy { it.first }
+
+                val dataMap = tempMap.mapValues { (_, rawPoints) ->
+                    if (rawPoints.isEmpty()) return@mapValues emptyList<Pair<Long, Double>>()
+                    val allPointsInRange = rawPoints.sortedBy { it.first }
+                    val numBuckets = 15
+                    val startTime = allPointsInRange.first().first
+                    val endTime = allPointsInRange.last().first
+                    val totalDataSpan = (endTime - startTime).let { if (it <= 0) 1L else it }
+                    val bucketDuration = totalDataSpan / numBuckets
+                    val buckets = mutableListOf<Pair<Long, Double>>()
+                    for (i in 0 until numBuckets) {
+                        val bStart = startTime + (i * bucketDuration)
+                        val bEnd = bStart + bucketDuration
+                        val pointsInBucket = allPointsInRange.filter { it.first in bStart..bEnd }
+                        if (pointsInBucket.isNotEmpty()) {
+                            buckets.add(Pair(bStart + (bucketDuration / 2), pointsInBucket.map { it.second }.average()))
+                        }
+                    }
+                    if (buckets.size < 3) allPointsInRange.takeLast(50).sortedBy { it.first } else buckets
+                }.filterValues { it.isNotEmpty() }
+
+                if (dataMap.isNotEmpty()) {
+                    android.util.Log.v("AUDIT_V11", "SmallWidget [CHART_GEN] for $targetId")
+                    val start = System.currentTimeMillis()
+                    val allTimes = dataMap.values.flatten().map { it.first }
+                    val maxTime = allTimes.maxOrNull() ?: System.currentTimeMillis()
+                    val effectiveXRange = (maxTime - (allTimes.minOrNull() ?: 0L)).let { if (it <= 0) 3600000L else it }
+
+                    val bitmap = WidgetChartGenerator.generateLineChart(dataMap, 300, 150, effectiveXRange, maxTime)
+                    android.util.Log.v("AUDIT_V11", "SmallWidget [CHART_DONE] for $targetId, time=${System.currentTimeMillis() - start}ms")
+                    bitmap
                 } else {
-                    buckets
+                    null
                 }
-            }.filterValues { it.isNotEmpty() }
-
-            android.util.Log.d("Widget", "Chart data processed for channel $targetId. ${dataMap.size} fields. Points: ${dataMap.mapValues { it.value.size }}")
-
-            if (dataMap.isNotEmpty()) {
-                android.util.Log.v("AUDIT_V11", "SmallWidget [CHART_START] generating for $targetId")
-                val start = System.currentTimeMillis()
-                
-                // Calculate actual X range across ALL fields for a unified X axis
-                val allTimes = dataMap.values.flatten().map { it.first }
-                val minTime = allTimes.minOrNull() ?: 0L
-                val maxTime = allTimes.maxOrNull() ?: System.currentTimeMillis()
-                val effectiveXRange = (maxTime - minTime).let { if (it <= 0) 3600000L else it }
-
-                val bitmap = WidgetChartGenerator.generateLineChart(
-                    dataMap, 
-                    safeWidth = 300, // Reduced resolution to prevent TransactionTooLargeException on Pixel
-                    safeHeight = 150,
-                    timeRangeMs = effectiveXRange,
-                    referenceNow = maxTime // Anchored to latest data point
-                )
-                android.util.Log.v("AUDIT_V11", "SmallWidget [CHART_DONE] for $targetId, time=${System.currentTimeMillis() - start}ms")
-                bitmap
             } else {
-                android.util.Log.i("AUDIT_V11", "SmallWidget [VERSION] 1.0.3 - Sorted sampling + Auto-zoom for $targetId")
-                null
+                previousState.chartBitmap
             }
         } else {
-            android.util.Log.w("AUDIT_V11", "SmallWidget [CHART_SKIP] Too few entries for chart: ${entries.size}")
             null
         }
 
-        // Load alerts and check if any threshold is violated
         val activeAlertFields = if (entry != null) {
             val entryDomain = entry.toDomain()
             checkAlerts(entryDomain, alerts).map { it.fieldNumber }.toSet()
@@ -267,7 +262,7 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
 }
 
 /**
- * Callback triggered by the manual refresh button on the widget.
+ * Callback triggered by the refresh button on the widget.
  */
 class RefreshAction : ActionCallback {
     override suspend fun onAction(
@@ -282,7 +277,6 @@ class RefreshAction : ActionCallback {
         val channelPreferences = entryPoint.channelPreferences()
         val getChannelFeedUseCase = entryPoint.getChannelFeedUseCase()
         
-        // Get the channel explicitly or refresh all
         val prefs = getAppWidgetState<Preferences>(context, WidgetPreferencesStateDefinition, glanceId)
         val bindingRepo = entryPoint.widgetBindingRepository()
         
@@ -292,15 +286,16 @@ class RefreshAction : ActionCallback {
         if (effectiveId > 0) {
             val channel = channelPreferences.observe().first().find { it.id == effectiveId }
             if (channel != null) {
-                // Set loading status
+                // Set refreshing status
                 androidx.glance.appwidget.state.updateAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId) { p ->
                     p.toMutablePreferences().apply { this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = true }
                 }
                 ThingSpeakGlanceWidget().update(context, glanceId)
 
-                val result = getChannelFeedUseCase.refresh(channel.id, channel.apiKey)
+                val apiKeySafeguard = channel.apiKey ?: ""
+                val result = getChannelFeedUseCase.refresh(channel.id, apiKeySafeguard)
                 
-                // Clear loading status
+                // Clear refreshing status
                 androidx.glance.appwidget.state.updateAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId) { p ->
                     p.toMutablePreferences().apply { this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = false }
                 }
@@ -311,9 +306,7 @@ class RefreshAction : ActionCallback {
                 }
             }
         } else {
-            // Fallback: refresh everything if no specific ID bound
             DataSyncWorker.runOnce(context)
-            // Note: runOnce is still async, but for a generic refresh it's better than nothing
         }
         
         ThingSpeakGlanceWidget().update(context, glanceId)
@@ -321,7 +314,7 @@ class RefreshAction : ActionCallback {
 }
 
 /**
- * Action to launch the configuration activity for an existing widget.
+ * Action opening the configuration screen for an existing widget.
  */
 class EditAction : ActionCallback {
     override suspend fun onAction(
@@ -341,4 +334,3 @@ class EditAction : ActionCallback {
         }
     }
 }
-
