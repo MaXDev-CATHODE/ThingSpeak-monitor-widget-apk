@@ -33,7 +33,7 @@ class SecurityInterceptor : Interceptor {
                 
             val newRequest = originalRequest.newBuilder()
                 .url(newUrl)
-                .addHeader("X-THINGSPEAKAPIKEY", apiKey)
+                .addHeader("THINGSPEAKAPIKEY", apiKey)
                 .build()
                 
             chain.proceed(newRequest)

@@ -3,6 +3,8 @@ package com.thingspeak.monitor.feature.settings.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
+import com.thingspeak.monitor.core.datastore.SavedChannel
+import com.thingspeak.monitor.feature.channel.domain.model.AlertThreshold
 import com.thingspeak.monitor.feature.channel.data.local.AlertRuleDao
 import com.thingspeak.monitor.feature.channel.data.local.AlertRuleEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -12,7 +14,7 @@ import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 data class AlertRulesUiState(
-    val channel: ChannelPreferences.SavedChannel? = null,
+    val channel: SavedChannel? = null,
     val rules: List<AlertRuleEntity> = emptyList(),
     val isLoading: Boolean = true
 )

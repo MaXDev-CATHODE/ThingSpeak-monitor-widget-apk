@@ -28,8 +28,8 @@ android {
         applicationId = "com.thingspeak.monitor"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 6
+        versionName = "1.0.5"
 
         resConfigs("en")
         ndk {
@@ -91,8 +91,8 @@ android {
             if (releaseSigning != null && releaseSigning.storeFile != null) {
                 signingConfig = releaseSigning
             }
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -152,7 +152,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     // ── Coroutines ───────────────────────────────────────────────
-    implementation(libs.coroutines.android)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 
     // ── Glance (Modern App Widget) ───────────────────────────────
     implementation(libs.glance)

@@ -31,7 +31,7 @@
 -keep class com.thingspeak.monitor.feature.widget.WidgetRefreshWorker { *; }
 
 # Keep models for Retrofit/Serialization
--keep class com.thingspeak.monitor.feature.channel.data.dto.** { *; }
+-keep class com.thingspeak.monitor.feature.channel.data.remote.dto.** { *; }
 
 # MPAndroidChart
 -keep class com.github.mikephil.charting.** { *; }

@@ -12,8 +12,10 @@ import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.appwidget.updateAll
 import androidx.datastore.preferences.core.*
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.collect
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
-import com.thingspeak.monitor.core.worker.DataSyncWorker
+import com.thingspeak.monitor.core.datastore.SavedChannel
 import com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.MainScope
@@ -26,13 +28,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.collectAsState
 import javax.inject.Inject
 
-/**
- * Configuration activity launched when the user adds a ThingSpeak widget.
- *
- * Sets [Activity.RESULT_CANCELED] immediately so that pressing back
- * without saving does not add the widget. On successful save, persists
- * channel data, updates the widget, and finishes with [Activity.RESULT_OK].
- */
 @AndroidEntryPoint
 class WidgetConfigActivity : ComponentActivity() {
 
@@ -49,69 +44,61 @@ class WidgetConfigActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setResult(Activity.RESULT_CANCELED)
 
-        val appWidgetId = intent?.extras?.getInt(
-            AppWidgetManager.EXTRA_APPWIDGET_ID,
-            AppWidgetManager.INVALID_APPWIDGET_ID,
-        ) ?: AppWidgetManager.INVALID_APPWIDGET_ID
-
-        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
-            finish()
-            return
-        }
+        val appWidgetId = intent?.extras?.getInt(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID) ?: AppWidgetManager.INVALID_APPWIDGET_ID
+        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return }
 
         scope.launch {
-            // ... (loading initial state as before) ...
             val glanceId = findGlanceId(appWidgetId)
-
-            val prefs = if (glanceId != null) {
-                getAppWidgetState<Preferences>(this@WidgetConfigActivity, WidgetPreferencesStateDefinition, glanceId)
-            } else null
+            val prefs = if (glanceId != null) getAppWidgetState<Preferences>(this@WidgetConfigActivity, WidgetPreferencesStateDefinition, glanceId) else null
             
             val savedChannelId = prefs?.get(longPreferencesKey("channel_id"))
             val savedBgColor = prefs?.get(stringPreferencesKey("bg_color"))
+            val savedTextColor = prefs?.get(stringPreferencesKey("text_color"))
             val savedTransparency = prefs?.get(floatPreferencesKey("transparency"))
             val savedFontSize = prefs?.get(intPreferencesKey("font_size"))
-            val savedVisibleFields = prefs?.get(stringSetPreferencesKey("visible_fields"))?.map { it.toInt() }?.toSet()
-            val savedChartField = prefs?.get(intPreferencesKey("chart_field"))
             val savedIsGlass = prefs?.get(booleanPreferencesKey("is_glass"))
+            val savedVisibleFields = prefs?.get(stringSetPreferencesKey("visible_fields"))?.mapNotNull { it.toIntOrNull() }?.toSet()
+            
+            var initialChannels: List<SavedChannel> = emptyList()
+            channelPreferences.observe().take(1).collect { initialChannels = it }
+            
+            val initialAlertRules = if (savedChannelId != null) {
+                repository.getAlertRules(savedChannelId, null)
+            } else emptyList()
 
-            // Initial snapshot to find the saved settings
-            val initialChannels = channelPreferences.observe().first()
-            val existingChannel = savedChannelId?.let { idVal ->
-                initialChannels.find { it.id == idVal }
-            }
+            val existing = savedChannelId?.let { idVal -> initialChannels.find { it.id == idVal } }
 
             setContent {
                 val allChannels by channelPreferences.observe().collectAsState(initial = initialChannels)
                 var isSaving by remember { mutableStateOf(false) }
                 ThingSpeakMonitorTheme {
                     WidgetConfigScreen(
-                        initialChannelId = existingChannel?.id,
-                        initialApiKey = existingChannel?.apiKey,
-                        initialChannelName = existingChannel?.name,
-                        initialBgColorHex = savedBgColor ?: existingChannel?.widgetBgColorHex,
-                        initialTransparency = savedTransparency ?: existingChannel?.widgetTransparency,
-                        initialFontSize = savedFontSize ?: existingChannel?.widgetFontSize,
-                        initialVisibleFields = savedVisibleFields ?: existingChannel?.widgetVisibleFields,
-                        initialChartField = savedChartField,
-                        initialIsGlass = savedIsGlass,
+                        initialChannelId = existing?.id,
+                        initialApiKey = existing?.apiKey,
+                        initialChannelName = existing?.name,
+                        initialAlertRules = initialAlertRules,
+                        initialBgColorHex = savedBgColor ?: existing?.widgetBgColorHex,
+                        initialTransparency = savedTransparency ?: existing?.widgetTransparency ?: 1.0f,
+                        initialIsGlass = savedIsGlass ?: existing?.isGlassmorphismEnabled,
+                        initialChartTimespan = existing?.chartProcessingPeriod,
+                        initialChartTimespanStr = existing?.chartTimespan,
+                        initialChartResults = existing?.chartResults ?: 60,
+                        initialFontSize = savedFontSize ?: existing?.widgetFontSize ?: 12,
+                        initialTextColorHex = savedTextColor ?: existing?.widgetTextColorHex,
+                        initialVisibleFields = savedVisibleFields ?: existing?.widgetVisibleFields ?: emptySet(),
                         isSaving = isSaving,
                         availableChannels = allChannels,
-                        onRefreshRequest = { channelId, key ->
-                            scope.launch {
-                                try {
-                                    repository.refreshFeed(channelId, key)
-                                } catch (e: Exception) {
-                                    android.util.Log.e("WidgetConfig", "Failed to refresh metadata for $channelId", e)
-                                }
+                        onRefreshRequest = { chanId, key ->
+                            scope.launch { 
+                                val ch = allChannels.find { it.id == chanId }
+                                try { repository.refreshFeed(chanId, key, chartTimespan = ch?.chartTimespan) } catch (e: Exception) {} 
                             }
                         },
-                        onSave = { channelId, apiKey, channelName, bgColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan ->
+                        onSave = { chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResults, alertRules ->
                             isSaving = true
-                            onChannelSaved(appWidgetId, channelId, apiKey, channelName, bgColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, savedChannelId)
+                            onChannelSaved(appWidgetId, chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResults, alertRules)
                         },
                     )
                 }
@@ -125,152 +112,83 @@ class WidgetConfigActivity : ComponentActivity() {
         apiKey: String,
         channelName: String,
         widgetBgColorHex: String?,
+        widgetTextColorHex: String?,
         widgetTransparency: Float,
         widgetFontSize: Int,
         widgetVisibleFields: Set<Int>,
         chartField: Int,
         isGlass: Boolean,
         chartTimespan: Int,
-        savedChannelId: Long?
+        chartTimespanStr: String,
+        chartResultsCount: Int,
+        alertRules: List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>
     ) {
         scope.launch {
             try {
-                android.util.Log.d("SNIPER_V5", "onChannelSaved triggered for channel $channelId, widget $appWidgetId")
-                
-                // 1. Save Channel Preferences (Persistent)
-                val existingChannels = channelPreferences.observe().first()
-                val existing = existingChannels.find { it.id == channelId }
-                
-                val updatedChannel = (existing ?: ChannelPreferences.SavedChannel(id = channelId, name = channelName)).copy(
-                    name = channelName.ifBlank { existing?.name ?: "Channel $channelId" },
-                    apiKey = apiKey.takeIf { it.isNotBlank() },
-                    widgetBgColorHex = widgetBgColorHex,
-                    widgetTransparency = widgetTransparency,
-                    widgetFontSize = widgetFontSize,
-                    widgetVisibleFields = widgetVisibleFields,
-                    isGlassmorphismEnabled = isGlass,
-                    chartField = chartField,
-                    chartProcessingPeriod = chartTimespan
+                // Unified Alerts: rules are global per channel (appWidgetId = null)
+                repository.deleteGlobalAlertRules(channelId)
+                alertRules.forEach { rule ->
+                    repository.saveAlertRule(rule.copy(appWidgetId = null))
+                }
+                android.util.Log.d("TS_DEBUG", "Unified Alert rules saved for channel $channelId")
+                // 1. Update Core Channel Info (API Key, Name Only)
+                val existingChannel = channelPreferences.observe().first().find { it.id == channelId }
+                val updatedChannel = (existingChannel ?: SavedChannel(id = channelId, name = channelName)).copy(
+                    id = channelId,
+                    name = channelName,
+                    apiKey = apiKey,
+                    lastSyncStatus = "NONE",
+                    lastSyncTime = System.currentTimeMillis()
                 )
                 channelPreferences.save(updatedChannel)
-                android.util.Log.d("NUCLEAR_V8", "1. Channel prefs saved for $channelId")
+                android.util.Log.d("NUCLEAR_TRACER", "Core Channel info saved (Visuals skipped for isolation)")
 
-                // 2. CRITICAL SYNC BINDING (NUCLEAR V8)
-                // We WAIT for this to finish before allowing the activity to close.
                 widgetBindingRepository.saveBinding(appWidgetId, channelId)
-                android.util.Log.d("NUCLEAR_V8", "2. Binding DB saved synchronicly: $appWidgetId -> $channelId")
 
-                // 3. Atomic Background Save (survives activity finish)
-                @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+                // Sync with Room DB for app UI consistency (Core Info Only)
+                repository.observeChannel(channelId).first()?.let { roomChannel ->
+                    repository.updateChannel(roomChannel.copy(
+                        name = channelName,
+                        apiKey = apiKey
+                        // Visuals skipped to avoid interference with Main App (Agent 2.1 Fix)
+                    ))
+                }
+
                 val appContext = applicationContext
-                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
-                    try {
-                        android.util.Log.e("NUCLEAR_V8", ">>> STARTING ASYNC SYNC V8 for $appWidgetId")
-
-                        // Glance State (Best Effort)
-                        val gId = findGlanceId(appWidgetId)
-                        if (gId != null) {
-                            updateAppWidgetState(appContext, WidgetPreferencesStateDefinition, gId) { p ->
-                                p.toMutablePreferences().apply {
-                                    this[longPreferencesKey("channel_id")] = channelId
-                                    this[stringPreferencesKey("bg_color")] = widgetBgColorHex ?: "#FFFFFF"
-                                    this[floatPreferencesKey("transparency")] = widgetTransparency
-                                    this[intPreferencesKey("font_size")] = widgetFontSize
-                                    this[stringSetPreferencesKey("visible_fields")] = widgetVisibleFields.map { it.toString() }.toSet()
-                                    this[intPreferencesKey("chart_field")] = chartField
-                                    this[booleanPreferencesKey("is_glass")] = isGlass
-                                    this[intPreferencesKey("chart_timespan")] = chartTimespan
-                                    this[booleanPreferencesKey("is_refreshing")] = true
-                                }
-                            }
-                            android.util.Log.d("NUCLEAR_V8", "Async: DataStore updated for $appWidgetId")
+                val gId = findGlanceId(appWidgetId)
+                if (gId != null) {
+                    updateAppWidgetState(appContext, WidgetPreferencesStateDefinition, gId) { p ->
+                        p.toMutablePreferences().apply {
+                            this[longPreferencesKey("channel_id")] = channelId
+                            this[stringPreferencesKey("channel_name")] = channelName
+                            this[stringPreferencesKey("bg_color")] = widgetBgColorHex ?: "#FFFFFF"
+                            this[stringPreferencesKey("text_color")] = widgetTextColorHex ?: ""
+                            this[floatPreferencesKey("transparency")] = widgetTransparency
+                            this[intPreferencesKey("font_size")] = widgetFontSize
+                            this[booleanPreferencesKey("is_glass")] = isGlass
+                            this[intPreferencesKey("chart_results")] = chartResultsCount
+                            this[stringSetPreferencesKey("visible_fields")] = widgetVisibleFields.map { it.toString() }.toSet()
                         }
-                        
-                        ThingSpeakGlanceWidget().updateAll(appContext)
-
-                        // ULTIMATE SYSTEM SIGNAL
-                        val updateIntent = Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
-                            putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
-                            setPackage(packageName)
-                        }
-                        appContext.sendBroadcast(updateIntent)
-                        android.util.Log.d("NUCLEAR_V8", "Async: System signals sent.")
-
-                        // Sync
-                        com.thingspeak.monitor.core.worker.DataSyncWorker.runOnce(appContext)
-                        android.util.Log.e("NUCLEAR_V8", "Async: Worker enqueued.")
-                    } catch (e: Exception) {
-                        android.util.Log.e("NUCLEAR_V8", "Async: FATAL ERROR", e)
-                        ThingSpeakGlanceWidget().updateAll(appContext)
                     }
                 }
+                
+                ThingSpeakGlanceWidget().updateAll(appContext)
+                ValueGridWidget().updateAll(appContext)
 
-                // 4. Finalize Activity ON MAIN THREAD
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    setResult(android.app.Activity.RESULT_OK, Intent().apply {
-                        putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                    })
-                    
-                    android.util.Log.e("NUCLEAR_V8", ">>> RESULT_OK sent to system for $appWidgetId. Finishing.")
+                    setResult(Activity.RESULT_OK, Intent().apply { putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId) })
                     finish()
                 }
-
-            } catch (e: Exception) {
-                android.util.Log.e("NUCLEAR_V8", "FATAL save error", e)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    finish()
-                }
-            }
-        }
-    }
-
-    private suspend fun updateGlanceWidget(appWidgetId: Int) {
-        try {
-            val glanceId = GlanceAppWidgetManager(this)
-                .getGlanceIdBy(appWidgetId)
-            ThingSpeakGlanceWidget().update(this, glanceId)
-        } catch (_: Exception) {
-            // Widget may not yet be placed; ignore gracefully
+            } catch (e: Exception) { finish() }
         }
     }
 
     private suspend fun findGlanceId(appWidgetId: Int): androidx.glance.GlanceId? {
-        var retries = 5
-        while (retries > 0) {
-            try {
-                val manager = GlanceAppWidgetManager(this)
-                // Strategy 1: Official way
-                val officialId = manager.getGlanceIdBy(appWidgetId)
-                if (officialId != null) {
-                    android.util.Log.d("WidgetConfig", "Found GlanceId via official way for $appWidgetId")
-                    return officialId
-                }
-                
-                // Strategy 2: Search all known widget instances
-                val foundId = manager.getGlanceIds(ThingSpeakGlanceWidget::class.java).find { 
-                    manager.getAppWidgetId(it) == appWidgetId 
-                } ?: manager.getGlanceIds(ValueGridWidget::class.java).find { 
-                    manager.getAppWidgetId(it) == appWidgetId 
-                }
-                
-                if (foundId != null) {
-                    android.util.Log.d("WidgetConfig", "Found GlanceId via exhaustive search for $appWidgetId")
-                    return foundId
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("WidgetConfig", "Error searching for GlanceId for $appWidgetId", e)
-            }
-            
-            android.util.Log.w("WidgetConfig", "GlanceId not found for $appWidgetId, retrying in 100ms... ($retries left)")
-            kotlinx.coroutines.delay(100)
-            retries--
-        }
-        android.util.Log.e("WidgetConfig", "FAILED to find GlanceId for $appWidgetId after all retries")
-        return null
+        return try {
+            val manager = GlanceAppWidgetManager(this)
+            manager.getGlanceIdBy(appWidgetId)
+        } catch (e: Exception) { null }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        scope.cancel()
-    }
+    override fun onDestroy() { super.onDestroy(); scope.cancel() }
 }

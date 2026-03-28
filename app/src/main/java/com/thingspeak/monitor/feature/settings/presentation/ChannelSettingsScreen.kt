@@ -82,6 +82,51 @@ fun ChannelSettingsScreen(
                         valueRange = 0f..4f,
                         steps = 3
                     )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Merge Charts", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = "Combine all fields into a single chart view",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.channel?.isMergingEnabled ?: false,
+                            onCheckedChange = { viewModel.updateChartSettings(isMergingEnabled = it) }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Normalization Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Normalized Mode (0-100%)", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = "Scale all fields to 0-100% for comparison",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.channel?.isNormalized ?: false,
+                            onCheckedChange = { viewModel.updateChartSettings(isNormalized = it) }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Removed duplicated EightFieldSelector group
                 }
 
                 HorizontalDivider()

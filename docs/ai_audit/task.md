@@ -1,0 +1,22 @@
+# Task: Systemic Audit and Optimization of ThingSpeak Dashboard Rendering
+
+- [x] Core Context Research
+    - [x] Explore project structure and key components
+    - [x] Review recent logs and conversation context (@[conversation:"Stabilizing ThingSpeak Dashboard Rendering"])
+    - [x] Analyze current rendering logic and potential failure points
+- [x] Comprehensive Audit (30 Analyses)
+    - [x] Conduct 30 distinct analyses across code, process, and environment
+    - [x] Document findings, conclusions, and improvement ideas
+- [x] Development Environment Optimization
+    - [x] Plan a resilient environment for AI agents
+    - [x] Implement/Propose protocol changes to avoid AI confusion
+- [x] Verification and Documentation
+    - [x] Create `audit_results.md`
+    - [x] Create `dev_env_setup.md`
+    - [x] Create `implementation_plan.md`
+- [x] Systemic Execution
+    - [x] Apply Gradle & Environment optimizations
+    - [x] Extract `ChartDataProcessor` logic
+    - [x] Create and run `ChartDataProcessorTest`
+    - [x] Implement AI-friendly logging and state dumping
+    - [x] Final Verification of 30D rendering

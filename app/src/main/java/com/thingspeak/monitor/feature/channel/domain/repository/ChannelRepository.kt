@@ -21,7 +21,12 @@ interface ChannelRepository {
     fun observeChannel(channelId: Long): Flow<com.thingspeak.monitor.feature.channel.domain.model.Channel?>
 
     /** Synchronizes data from ThingSpeak API and saves to Room. */
-    suspend fun refreshFeed(channelId: Long, apiKey: String?, results: Int = 100)
+    suspend fun refreshFeed(
+        channelId: Long,
+        apiKey: String?,
+        results: Int? = null,
+        chartTimespan: String? = null
+    )
 
     /** Updates channel settings in local DataStore. */
     suspend fun updateChannel(channel: com.thingspeak.monitor.feature.channel.domain.model.Channel)
@@ -49,11 +54,20 @@ interface ChannelRepository {
     /** Deletes an alert threshold. */
     suspend fun deleteAlert(alert: com.thingspeak.monitor.feature.channel.domain.model.AlertThreshold)
 
-    /** Observes advanced alert rules for the channel. */
-    fun observeAlertRules(channelId: Long): Flow<List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>>
+    /** Observes advanced alert rules for the channel or widget. */
+    fun observeAlertRules(channelId: Long, appWidgetId: Int? = null): Flow<List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>>
 
-    /** Gets all advanced alert rules for a channel (one-shot). */
-    suspend fun getAlertRulesForChannel(channelId: Long): List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>
+    /** Gets all advanced alert rules for a channel or widget (one-shot). */
+    suspend fun getAlertRules(channelId: Long, appWidgetId: Int? = null): List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>
+
+    /** Saves or updates an alert rule. */
+    suspend fun saveAlertRule(rule: com.thingspeak.monitor.feature.channel.domain.model.AlertRule)
+
+    /** Deletes an alert rule. */
+    suspend fun deleteAlertRule(rule: com.thingspeak.monitor.feature.channel.domain.model.AlertRule)
+
+    /** Deletes all global alert rules for a channel. */
+    suspend fun deleteGlobalAlertRules(channelId: Long)
 
     /** Gets a fired alert state for a specific field. */
     suspend fun getFiredAlert(channelId: Long, fieldNumber: Int): com.thingspeak.monitor.feature.alert.domain.model.FiredAlert?

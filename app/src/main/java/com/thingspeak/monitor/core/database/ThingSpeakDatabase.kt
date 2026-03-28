@@ -19,7 +19,7 @@ import com.thingspeak.monitor.feature.channel.data.local.FeedEntryEntity
         com.thingspeak.monitor.feature.channel.data.local.AlertRuleEntity::class,
         com.thingspeak.monitor.feature.widget.WidgetBindingEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class ThingSpeakDatabase : RoomDatabase() {

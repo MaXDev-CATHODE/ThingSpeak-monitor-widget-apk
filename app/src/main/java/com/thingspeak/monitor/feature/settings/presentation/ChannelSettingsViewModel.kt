@@ -2,23 +2,22 @@ package com.thingspeak.monitor.feature.settings.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thingspeak.monitor.core.datastore.ChannelPreferences
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 import com.thingspeak.monitor.feature.channel.domain.model.AlertThreshold
+import com.thingspeak.monitor.feature.channel.domain.model.Channel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class ChannelSettingsUiState(
-    val channel: ChannelPreferences.SavedChannel? = null,
+    val channel: Channel? = null,
     val alerts: List<AlertThreshold> = emptyList(),
     val isLoading: Boolean = false
 )
 
 @HiltViewModel
 class ChannelSettingsViewModel @Inject constructor(
-    private val channelPreferences: ChannelPreferences,
     private val repository: ChannelRepository
 ) : ViewModel() {
 
@@ -28,7 +27,7 @@ class ChannelSettingsViewModel @Inject constructor(
     fun loadChannel(channelId: Long) {
         viewModelScope.launch {
             combine(
-                channelPreferences.observe().map { channels -> channels.find { it.id == channelId } },
+                repository.observeChannel(channelId),
                 repository.observeAlerts(channelId)
             ) { channel, alerts ->
                 ChannelSettingsUiState(
@@ -52,7 +51,7 @@ class ChannelSettingsViewModel @Inject constructor(
     ) {
         val current = _uiState.value.channel ?: return
         viewModelScope.launch {
-            channelPreferences.save(
+            repository.updateChannel(
                 current.copy(
                     widgetTransparency = transparency ?: current.widgetTransparency,
                     widgetBgColorHex = bgColor ?: current.widgetBgColorHex,
@@ -68,15 +67,21 @@ class ChannelSettingsViewModel @Inject constructor(
     fun updateChartSettings(
         rounding: Int? = null,
         processingType: String? = null,
-        processingPeriod: Int? = null
+        isNormalized: Boolean? = null,
+        isMergingEnabled: Boolean? = null,
+        preferredFields: Set<Int>? = null
     ) {
         val current = _uiState.value.channel ?: return
         viewModelScope.launch {
-            channelPreferences.save(
+            // Use repository.updateChannel to ensure proper mapping
+            repository.updateChannel(
                 current.copy(
                     chartRounding = rounding ?: current.chartRounding,
                     chartProcessingType = processingType ?: current.chartProcessingType,
-                    chartProcessingPeriod = processingPeriod ?: current.chartProcessingPeriod
+                    chartProcessingPeriod = current.chartProcessingPeriod,
+                    isNormalized = isNormalized ?: current.isNormalized,
+                    isMergingEnabled = isMergingEnabled ?: current.isMergingEnabled,
+                    preferredChartFields = preferredFields ?: current.preferredChartFields
                 )
             )
         }

@@ -48,9 +48,13 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-        composable<Screen.Chart> {
+        composable<Screen.Chart> { backStackEntry ->
+            val route: Screen.Chart = backStackEntry.toRoute()
+            android.util.Log.d("TS_DEBUG", "NavGraph: navigating to Screen.Chart(id=${route.channelId})")
             ChartScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                channelId = route.channelId,
+                apiKey = route.apiKey
             )
         }
         composable<Screen.ChannelSettings> { backStackEntry ->

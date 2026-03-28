@@ -16,10 +16,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -29,12 +33,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thingspeak.monitor.R
 import com.thingspeak.monitor.feature.chart.presentation.components.DateRangePickerDialog
 import com.thingspeak.monitor.feature.chart.presentation.components.ThingSpeakLineChart
+import com.thingspeak.monitor.feature.chart.presentation.components.ThingSpeakBarChart
 import com.thingspeak.monitor.core.ui.shimmer
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -45,17 +51,20 @@ import kotlinx.coroutines.launch
 @Composable
 fun ChartScreen(
     onNavigateBack: () -> Unit,
+    channelId: Long,
+    apiKey: String?,
     modifier: Modifier = Modifier,
     viewModel: ChartViewModel = hiltViewModel()
 ) {
+    android.util.Log.d("TS_DEBUG", "ChartScreen COMPOSE: channelId=$channelId")
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val isDailyRange by viewModel.isDailyRange.collectAsStateWithLifecycle()
-    val selectedFields by viewModel.selectedFields.collectAsStateWithLifecycle()
-    val dataFilter by viewModel.dataFilter.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val isDailyRange by viewModel.isDailyRange.collectAsStateWithLifecycle()
+    val isSmoothingEnabled by viewModel.isSmoothingEnabled.collectAsStateWithLifecycle()
     
     val fieldNames by viewModel.fieldNames.collectAsStateWithLifecycle()
     val channelName by viewModel.channelName.collectAsStateWithLifecycle()
+    val isLiveMode by viewModel.isLiveMode.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -64,8 +73,14 @@ fun ChartScreen(
     var showDateRangePicker by remember { mutableStateOf(false) }
     var showExportMenu by remember { mutableStateOf(false) }
     var fullscreenChart by remember { mutableStateOf<ChartDataBundle?>(null) }
+    
+    val listState = rememberLazyListState()
 
-    // Logic for launchers
+    LaunchedEffect(channelId) {
+        viewModel.setChannel(channelId, apiKey)
+        viewModel.refresh()
+    }
+
     val csvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
@@ -79,7 +94,6 @@ fun ChartScreen(
             if (outputStream != null) {
                 scope.launch {
                     try {
-                        // Generating CSV may take some time, so moving to Default dispatcher
                         val csvContent = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                             viewModel.exportCsv()
                         }
@@ -90,11 +104,9 @@ fun ChartScreen(
                         }
                         snackbarHostState.showSnackbar(context.getString(R.string.chart_export_success))
                     } catch (e: Exception) {
-                        snackbarHostState.showSnackbar(context.getString(R.string.chart_export_error))
+                        snackbarHostState.showSnackbar(context.getString(R.string.chart_export_error) + ": ${e.message}")
                     }
                 }
-            } else {
-                scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.chart_export_error)) }
             }
         }
     }
@@ -103,49 +115,34 @@ fun ChartScreen(
         contract = ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri ->
         uri?.let {
-            try {
-                context.contentResolver.openOutputStream(it)?.use { stream ->
-                    viewModel.exportPdf(stream, channelName)
+            scope.launch {
+                try {
+                    // Placeholder for PDF generation
+                    snackbarHostState.showSnackbar("PDF Export not implemented yet")
+                } catch (e: Exception) {
+                    snackbarHostState.showSnackbar("Error: ${e.message}")
                 }
-                scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.chart_export_success)) }
-            } catch (e: Exception) {
-                scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.chart_export_error)) }
             }
         }
     }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.chart_title)) },
+                title = { 
+                    Column {
+                        Text(channelName, style = MaterialTheme.typography.titleMedium)
+                        Text(if (isDailyRange) "Today" else "Historical", style = MaterialTheme.typography.bodySmall)
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.chart_back))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
                     IconButton(onClick = { showDateRangePicker = true }) {
-                        Icon(imageVector = Icons.Default.DateRange, contentDescription = stringResource(R.string.chart_select_range))
-                    }
-                    // Live Mode Toggle (Replaced standard refresh)
-                    val isLiveMode by viewModel.isLiveMode.collectAsStateWithLifecycle()
-                    IconButton(onClick = { viewModel.toggleLiveMode() }) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = stringResource(R.string.chart_live_mode),
-                                tint = if (isLiveMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (isLiveMode) {
-                                LiveIndicator(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .offset(x = (2).dp, y = (-2).dp)
-                                )
-                            }
-                        }
+                        Icon(Icons.Default.DateRange, contentDescription = stringResource(R.string.chart_select_range))
                     }
                     val isMerged by viewModel.isMergingEnabled.collectAsStateWithLifecycle()
                     IconButton(onClick = { viewModel.toggleMerging() }) {
@@ -187,33 +184,8 @@ fun ChartScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-                .graphicsLayer(clip = false)
         ) {
-            // Field Selection
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                fieldNames.forEach { (index, name) ->
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = true,
-                        enter = fadeIn() + expandHorizontally()
-                    ) {
-                        FilterChip(
-                            selected = selectedFields.contains(index),
-                            onClick = { viewModel.toggleField(index) },
-                            label = { Text(name) }
-                        )
-                    }
-                }
-            }
-
-            // Range Selection & Smoothing
             val currentRangeDays by viewModel.currentRangeDays.collectAsStateWithLifecycle()
-            val isSmoothingEnabled by viewModel.isSmoothingEnabled.collectAsStateWithLifecycle()
             
             Row(
                 modifier = Modifier
@@ -222,7 +194,6 @@ fun ChartScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Range Chips
                 FilterChip(
                     selected = currentRangeDays == 1,
                     onClick = { viewModel.loadChartData(1) },
@@ -240,8 +211,22 @@ fun ChartScreen(
                 )
                 
                 Spacer(modifier = Modifier.weight(1f))
-                
-                // Smoothing Toggle
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("LIVE", style = MaterialTheme.typography.labelMedium, color = if (isLiveMode) Color.Red else MaterialTheme.colorScheme.onSurface)
+                    Switch(
+                        checked = isLiveMode,
+                        onCheckedChange = { viewModel.toggleLiveMode() },
+                        modifier = Modifier.scale(0.7f),
+                        thumbContent = if (isLiveMode) {
+                            { Box(modifier = Modifier.size(6.dp).background(Color.Red, CircleShape)) }
+                        } else null
+                    )
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -254,21 +239,12 @@ fun ChartScreen(
                     )
                 }
 
+                val dataFilter by viewModel.dataFilter.collectAsStateWithLifecycle()
                 var showFilterMenu by remember { mutableStateOf(false) }
                 Box {
-                    TextButton(
-                        onClick = { showFilterMenu = true },
-                        contentPadding = PaddingValues(horizontal = 4.dp)
-                    ) {
-                        Text(
-                            text = dataFilter.name,
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        Icon(
-                            Icons.Default.ArrowDropDown,
-                            contentDescription = stringResource(R.string.chart_change_filter),
-                            modifier = Modifier.size(18.dp)
-                        )
+                    TextButton(onClick = { showFilterMenu = true }) {
+                        Text(text = dataFilter.name, style = MaterialTheme.typography.labelMedium)
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                     }
                     DropdownMenu(expanded = showFilterMenu, onDismissRequest = { showFilterMenu = false }) {
                         DataFilter.entries.forEach { filter ->
@@ -281,52 +257,85 @@ fun ChartScreen(
                 }
             }
 
-            // Chart Content
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
                 onRefresh = { viewModel.refresh() },
-                modifier = Modifier
-                    .weight(1f)
-                    .graphicsLayer(clip = false)
+                modifier = Modifier.weight(1f)
             ) {
-                AnimatedContent(
-                    targetState = uiState,
-                    contentKey = { it::class },
-                    transitionSpec = {
-                        fadeIn(androidx.compose.animation.core.tween(500)) togetherWith
-                                fadeOut(androidx.compose.animation.core.tween(300))
-                    },
-                    label = "ChartContentAnimation"
-                ) { state ->
-                    when (state) {
-                        is ChartState.Loading -> ShimmerChart()
-                        is ChartState.Error -> ErrorState(message = state.message, onRetry = { viewModel.refresh() })
-                        is ChartState.Empty -> EmptyState()
-                        is ChartState.Success -> {
-                            var activeChartTitle by remember { mutableStateOf<String?>(null) }
-                            
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer(clip = false),
-                                contentPadding = PaddingValues(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                items(state.charts) { bundle ->
-                                    val isActive = activeChartTitle == bundle.title
-                                    ChartCard(
-                                        bundle = bundle,
+                Box(modifier = Modifier.fillMaxSize()) {
+                    val successState = uiState as? ChartState.Success
+                    if (successState != null) {
+                        ChartSuccessContent(
+                            state = successState,
+                            listState = listState,
+                            viewModel = viewModel,
+                            isDailyRange = isDailyRange,
+                            isSmoothingEnabled = isSmoothingEnabled,
+                            onFullscreen = { fullscreenChart = it }
+                        )
+                    }
+
+                    AnimatedContent(
+                        targetState = uiState,
+                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        label = "ChartStatusAnimation"
+                    ) { state ->
+                        when (state) {
+                            is ChartState.Loading -> ShimmerChart()
+                            is ChartState.Error -> ErrorState(message = state.message, onRetry = { viewModel.refresh() })
+                            is ChartState.Empty -> EmptyState()
+                            is ChartState.Success -> { /* Persistent Box handles this */ }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (fullscreenChart != null) {
+            Dialog(
+                onDismissRequest = { fullscreenChart = null },
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = fullscreenChart?.title ?: "",
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.weight(1f).padding(start = 8.dp)
+                            )
+                            IconButton(onClick = { fullscreenChart = null }) {
+                                Icon(Icons.Default.Close, contentDescription = null)
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f).padding(16.dp)) {
+                            when (val bundle = fullscreenChart!!) {
+                                is ChartDataBundle.Line -> {
+                                    ThingSpeakLineChart(
+                                        lineData = bundle.lineData,
                                         isDailyRange = isDailyRange,
-                                        isActive = isActive,
-                                        onInteraction = { interacting ->
-                                            if (interacting) {
-                                                activeChartTitle = bundle.title
-                                            } else if (activeChartTitle == bundle.title) {
-                                                // Only clear if we are still the active one
-                                                activeChartTitle = null
-                                            }
-                                        },
-                                        onFullscreen = { fullscreenChart = bundle }
+                                        baselineX = bundle.baselineX,
+                                        timeScale = bundle.timeScale,
+                                        xAxisMin = bundle.xAxisMin,
+                                        xAxisMax = bundle.xAxisMax,
+                                        drawingStyle = bundle.drawingStyle,
+                                        sampleTimestamps = bundle.sampleTimestamps,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                is ChartDataBundle.Bar -> {
+                                    ThingSpeakBarChart(
+                                        barData = bundle.barData,
+                                        isDailyRange = isDailyRange,
+                                        baselineX = bundle.baselineX,
+                                        timeScale = bundle.timeScale,
+                                        xAxisMin = bundle.xAxisMin,
+                                        xAxisMax = bundle.xAxisMax,
+                                        sampleTimestamps = bundle.sampleTimestamps,
+                                        modifier = Modifier.fillMaxSize()
                                     )
                                 }
                             }
@@ -335,54 +344,52 @@ fun ChartScreen(
                 }
             }
         }
-    }
 
-    // Fullscreen Overlay
-    if (fullscreenChart != null) {
-        Dialog(
-            onDismissRequest = { fullscreenChart = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.surface
-            ) {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = fullscreenChart?.title ?: stringResource(R.string.chart_fullscreen_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.weight(1f).padding(start = 8.dp)
-                        )
-                        IconButton(onClick = { fullscreenChart = null }) {
-                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.chart_close))
-                        }
-                    }
-                    Box(modifier = Modifier.weight(1f).padding(16.dp)) {
-                        ThingSpeakLineChart(
-                            lineData = fullscreenChart!!.lineData,
-                            isDailyRange = isDailyRange,
-                            baselineX = fullscreenChart!!.baselineX,
-                            timeScale = fullscreenChart!!.timeScale,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+        if (showDateRangePicker) {
+            DateRangePickerDialog(
+                onDismiss = { showDateRangePicker = false },
+                onDateRangeSelected = { start, end ->
+                    viewModel.setDateRange(start.toEpochMilli(), end.toEpochMilli())
+                    showDateRangePicker = false
                 }
-            }
+            )
         }
     }
+}
 
-    if (showDateRangePicker) {
-        DateRangePickerDialog(
-            onDismiss = { showDateRangePicker = false },
-            onDateRangeSelected = { start, end ->
-                viewModel.setDateRange(start, end)
-                showDateRangePicker = false
-            }
-        )
+@Composable
+private fun ChartSuccessContent(
+    state: ChartState.Success,
+    listState: LazyListState,
+    viewModel: ChartViewModel,
+    isDailyRange: Boolean,
+    isSmoothingEnabled: Boolean,
+    onFullscreen: (ChartDataBundle) -> Unit
+) {
+    var activeChartTitle by remember { mutableStateOf<String?>(null) }
+    
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        userScrollEnabled = activeChartTitle == null
+    ) {
+        items(
+            items = state.charts,
+            key = { bundle -> bundle.title }
+        ) { bundle ->
+            ChartCard(
+                bundle = bundle,
+                isDailyRange = isDailyRange,
+                isSmoothingEnabled = isSmoothingEnabled,
+                isActive = activeChartTitle == bundle.title,
+                onInteraction = { interacting ->
+                    activeChartTitle = if (interacting) bundle.title else null
+                },
+                onFullscreen = { onFullscreen(bundle) }
+            )
+        }
     }
 }
 
@@ -393,12 +400,7 @@ fun ErrorState(message: String, onRetry: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            imageVector = Icons.Default.Warning,
-            contentDescription = stringResource(R.string.chart_warning),
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.error
-        )
+        Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.error)
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = message, textAlign = TextAlign.Center)
         TextButton(onClick = onRetry) { Text(stringResource(R.string.chart_retry)) }
@@ -412,84 +414,32 @@ fun EmptyState() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            imageVector = Icons.Default.Info,
-            contentDescription = stringResource(R.string.chart_no_data_desc),
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.secondary
-        )
+        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.secondary)
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = stringResource(R.string.chart_empty_data), textAlign = TextAlign.Center)
     }
 }
-@Composable
-fun LiveIndicator(modifier: Modifier = Modifier) {
-    val infiniteTransition = rememberInfiniteTransition(label = "live")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
-    )
-    
-    Box(
-        modifier = modifier
-            .size(10.dp)
-            .background(
-                color = androidx.compose.material3.MaterialTheme.colorScheme.error.copy(alpha = alpha),
-                shape = CircleShape
-            )
-    )
-}
 
 @Composable
 fun ShimmerChart() {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         repeat(3) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(300.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth().height(300.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.5f)
-                            .height(24.dp)
-                            .shimmer()
-                    )
+                    Box(modifier = Modifier.fillMaxWidth(0.5f).height(24.dp).shimmer())
                     Spacer(modifier = Modifier.height(16.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .shimmer()
-                    )
+                    Box(modifier = Modifier.fillMaxSize().shimmer())
                 }
             }
         }
     }
 }
 
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
-@Composable
-fun ChartScreenPreview() {
-    com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme {
-        ChartScreen(
-            onNavigateBack = {}
-        )
-    }
-}
 @Composable
 fun ChartCard(
     bundle: ChartDataBundle,
     isDailyRange: Boolean,
+    isSmoothingEnabled: Boolean = false,
     isActive: Boolean = false,
     onInteraction: (Boolean) -> Unit = {},
     onFullscreen: () -> Unit
@@ -498,39 +448,46 @@ fun ChartCard(
         modifier = Modifier
             .fillMaxWidth()
             .height(320.dp)
-            .graphicsLayer(clip = false)
             .zIndex(if (isActive) 10f else 0f),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isActive) 8.dp else 2.dp
-        )
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isActive) 8.dp else 2.dp)
     ) {
-        Column(modifier = Modifier.padding(8.dp).graphicsLayer(clip = false)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = bundle.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f).padding(start = 8.dp)
-                )
+        Column(modifier = Modifier.padding(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(text = bundle.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(start = 8.dp))
                 IconButton(onClick = onFullscreen) {
-                    Icon(
-                        imageVector = Icons.Default.Fullscreen,
-                        contentDescription = "Fullscreen",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                    Icon(Icons.Default.Fullscreen, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 }
             }
-            Box(modifier = Modifier.weight(1f).graphicsLayer(clip = false)) {
-                ThingSpeakLineChart(
-                    lineData = bundle.lineData,
-                    isDailyRange = isDailyRange,
-                    baselineX = bundle.baselineX,
-                    timeScale = bundle.timeScale,
-                    onInteraction = onInteraction,
-                    modifier = Modifier.fillMaxSize()
-                )
+            Box(modifier = Modifier.weight(1f)) {
+                when (bundle) {
+                    is ChartDataBundle.Line -> {
+                        ThingSpeakLineChart(
+                            lineData = bundle.lineData,
+                            isDailyRange = isDailyRange,
+                            baselineX = bundle.baselineX,
+                            timeScale = bundle.timeScale,
+                            xAxisMin = bundle.xAxisMin,
+                            xAxisMax = bundle.xAxisMax,
+                            drawingStyle = bundle.drawingStyle,
+                            sampleTimestamps = bundle.sampleTimestamps,
+                            onInteraction = onInteraction,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    is ChartDataBundle.Bar -> {
+                        ThingSpeakBarChart(
+                            barData = bundle.barData,
+                            isDailyRange = isDailyRange,
+                            baselineX = bundle.baselineX,
+                            timeScale = bundle.timeScale,
+                            xAxisMin = bundle.xAxisMin,
+                            xAxisMax = bundle.xAxisMax,
+                            sampleTimestamps = bundle.sampleTimestamps,
+                            onInteraction = onInteraction,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
             }
         }
     }

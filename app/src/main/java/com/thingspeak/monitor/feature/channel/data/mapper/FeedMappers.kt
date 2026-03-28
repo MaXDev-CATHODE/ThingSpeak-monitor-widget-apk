@@ -76,6 +76,7 @@ fun com.thingspeak.monitor.feature.channel.data.remote.dto.ChannelDto.toDomain(
             field6?.let { 6 to it },
             field7?.let { 7 to it },
             field8?.let { 8 to it },
-        ).toMap()
+        ).toMap(),
+        chartTimespan = "1D" // Default for new channels
     )
 

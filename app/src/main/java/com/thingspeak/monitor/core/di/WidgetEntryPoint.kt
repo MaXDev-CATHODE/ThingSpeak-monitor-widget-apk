@@ -18,6 +18,7 @@ interface WidgetEntryPoint {
     fun channelPreferences(): ChannelPreferences
     fun appPreferences(): com.thingspeak.monitor.core.datastore.AppPreferences
     fun checkAlertThresholdsUseCase(): com.thingspeak.monitor.feature.channel.domain.usecase.CheckAlertThresholdsUseCase
+    fun checkAlertRulesUseCase(): com.thingspeak.monitor.feature.channel.domain.usecase.CheckAlertRulesUseCase
     fun getChannelFeedUseCase(): com.thingspeak.monitor.feature.channel.domain.usecase.GetChannelFeedUseCase
     fun widgetBindingRepository(): com.thingspeak.monitor.feature.widget.WidgetBindingRepository
 }

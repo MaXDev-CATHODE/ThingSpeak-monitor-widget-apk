@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -21,6 +22,7 @@ import com.thingspeak.monitor.feature.channel.domain.model.AlertThreshold
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 import com.thingspeak.monitor.feature.channel.domain.usecase.CheckAlertThresholdsUseCase
 import com.thingspeak.monitor.feature.widget.ThingSpeakGlanceWidget
+import com.thingspeak.monitor.feature.channel.domain.model.toSavedChannel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
@@ -54,7 +56,12 @@ class DataSyncService : Service() {
         super.onStartCommand(intent, flags, startId)
         
         val notification = createNotification("Initializing background monitoring...")
-        startForeground(NOTIFICATION_ID, notification)
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
 
         startSyncLoop()
         
@@ -79,29 +86,30 @@ class DataSyncService : Service() {
                     }
 
                     val intervalMinutes = appPreferences.observeHighFrequencyInterval().first()
-                    Log.d(TAG, "Starting high-frequency sync (Interval: $intervalMinutes min)")
+                    val startTime = System.currentTimeMillis()
+                    Log.i(TAG, "High-frequency sync CYCLE START: interval=$intervalMinutes min")
                     
                     updateNotification("Monitoring active (Interval: $intervalMinutes min)")
                     
                     val channels = repository.observeChannelList().first()
-                    var anyAlertTriggered = false
-                    var anyDataUpdated = false
+                    val manager = GlanceAppWidgetManager(this@DataSyncService)
+                    
+                    // EntryPoint for WidgetBindingRepository
+                    val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                        applicationContext, 
+                        com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
+                    )
+                    val bindingRepo = entryPoint.widgetBindingRepository()
 
                     channels.forEach { channel ->
+                        Log.v(TAG, "Syncing channel ${channel.id} via Service...")
                         val result = syncChannelUseCase(channel)
-                        if (result.hasNewData) anyDataUpdated = true
-                        if (result.alertStateChanged) anyAlertTriggered = true
-                        
-                        result.error?.let {
-                            Log.w(TAG, "Sync error for channel ${channel.id}: ${it.message}")
-                        }
+                        updateWidgetsForChannel(manager, bindingRepo, result)
                     }
 
-                    if (anyDataUpdated || anyAlertTriggered) {
-                        Log.d(TAG, "Update needed. triggering widget refresh.")
-                        updateAllWidgets()
-                    }
-                    
+                    val duration = System.currentTimeMillis() - startTime
+                    Log.i(TAG, "High-frequency sync CYCLE END. Took ${duration}ms. Sleeping for $intervalMinutes min.")
+
                     delay(intervalMinutes * 60 * 1000L)
                 } catch (e: Exception) {
                     Log.e(TAG, "Sync loop error", e)
@@ -111,21 +119,61 @@ class DataSyncService : Service() {
         }
     }
 
-
-    private suspend fun updateAllWidgets() {
-        val manager = GlanceAppWidgetManager(this)
+    private suspend fun updateWidgetsForChannel(
+        manager: GlanceAppWidgetManager,
+        bindingRepo: com.thingspeak.monitor.feature.widget.WidgetBindingRepository,
+        result: com.thingspeak.monitor.feature.channel.domain.usecase.SyncChannelUseCase.Result
+    ) {
         val widgetClasses = listOf(
             ThingSpeakGlanceWidget::class.java,
             com.thingspeak.monitor.feature.widget.ValueGridWidget::class.java
         )
 
+        var chartBase64: String? = null
+        val channel = result.channel
+
         widgetClasses.forEach { widgetClass ->
             val glanceIds = manager.getGlanceIds(widgetClass)
-            for (id in glanceIds) {
-                if (widgetClass == ThingSpeakGlanceWidget::class.java) {
-                    ThingSpeakGlanceWidget().update(this, id)
-                } else if (widgetClass == com.thingspeak.monitor.feature.widget.ValueGridWidget::class.java) {
-                    com.thingspeak.monitor.feature.widget.ValueGridWidget().update(this, id)
+            for (glanceId in glanceIds) {
+                val appWidgetId = manager.getAppWidgetId(glanceId)
+                val boundChannelId = bindingRepo.getBindingSync(appWidgetId)
+                
+                if (boundChannelId == channel.id) {
+                    // Generate chart for main widget if not already done
+                    if (widgetClass == ThingSpeakGlanceWidget::class.java && chartBase64 == null) {
+                        val entries = repository.observeFeed(channel.id).first()
+                        if (entries.isNotEmpty()) {
+                            val chartBitmap = com.thingspeak.monitor.feature.widget.WidgetChartGenerator.generateSimpleChart(
+                                entries = entries.reversed(),
+                                fieldIndices = channel.preferredChartFields?.ifEmpty { null } ?: setOf(1),
+                                isNormalized = channel.isNormalized
+                            )
+                            chartBitmap?.let {
+                                val stream = java.io.ByteArrayOutputStream()
+                                it.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, stream)
+                                chartBase64 = android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.DEFAULT)
+                            }
+                        }
+                    }
+
+                    // Update DataStore preferences for this widget instance
+                    com.thingspeak.monitor.feature.widget.WidgetUpdateHelper.updateWidgetPreferences(
+                        context = this,
+                        glanceId = glanceId,
+                        channel = channel.toSavedChannel(),
+                        latestFeed = result.latestEntry,
+                        chartBitmapBase64 = if (widgetClass == ThingSpeakGlanceWidget::class.java) chartBase64 else null,
+                        violatedMinFields = result.allViolations.filter { it.condition == "LESS_THAN" }.map { it.fieldNumber }.toSet(),
+                        violatedMaxFields = result.allViolations.filter { it.condition == "GREATER_THAN" }.map { it.fieldNumber }.toSet(),
+                        minSetFields = result.channelRules.filter { it.condition == "LESS_THAN" && it.isEnabled }.map { it.fieldNumber }.toSet(),
+                        maxSetFields = result.channelRules.filter { it.condition == "GREATER_THAN" && it.isEnabled }.map { it.fieldNumber }.toSet()
+                    )
+
+                    // Trigger UI refresh
+                    when (widgetClass) {
+                        ThingSpeakGlanceWidget::class.java -> ThingSpeakGlanceWidget().update(this, glanceId)
+                        com.thingspeak.monitor.feature.widget.ValueGridWidget::class.java -> com.thingspeak.monitor.feature.widget.ValueGridWidget().update(this, glanceId)
+                    }
                 }
             }
         }

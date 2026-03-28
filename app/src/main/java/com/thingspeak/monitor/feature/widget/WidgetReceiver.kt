@@ -38,11 +38,13 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
-        Log.d("NUCLEAR_V8", "StandardWidget onUpdate for: ${appWidgetIds.joinToString()}")
+        android.util.Log.i("TS_DEBUG", "WidgetReceiver onUpdate: triggered for ids=${appWidgetIds.joinToString()}")
 
         // FORCE SYNC ID FROM ROOM TO GLANCE (NUCLEAR V8)
-        scope.launch {
-            appWidgetIds.forEach { id ->
+        // Note: Using a top-level coroutine scope for fire-and-forget sync to avoid blocking the receiver's main thread.
+        // However, we ensure the periodic refresh is enqueued correctly.
+        appWidgetIds.forEach { id ->
+            scope.launch {
                 try {
                     val boundId = repository.getBindingSync(id)
                     if (boundId > 0) {
@@ -55,6 +57,8 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
                                 }
                             }
                         }
+                        // Trigger immediate refresh for this specific widget if it's new/stale
+                        ThingSpeakGlanceWidget().update(context, gId)
                     }
                 } catch (e: Exception) {
                     Log.e("NUCLEAR_V8", "Failed to push binding for standard $id", e)
@@ -65,7 +69,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        Log.d(TAG, "onReceive intent: ${intent.action}")
+        android.util.Log.v("TS_DEBUG", "WidgetReceiver onReceive: action=${intent.action}")
     }
 
     override fun onEnabled(context: Context) {
@@ -76,13 +80,14 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
+        android.util.Log.i("TS_DEBUG", "WidgetReceiver onDeleted: ids=${appWidgetIds.joinToString()}")
         val manager = AppWidgetManager.getInstance(context)
         val remaining = manager.getAppWidgetIds(
             android.content.ComponentName(context, WidgetReceiver::class.java)
         )
         if (remaining.isEmpty()) {
             WorkManager.getInstance(context).cancelUniqueWork(com.thingspeak.monitor.core.worker.DataSyncWorker.WORK_NAME)
-            Log.i(TAG, "Last widget removed — periodic refresh cancelled")
+            android.util.Log.w("TS_DEBUG", "WidgetReceiver: Last widget removed — periodic refresh cancelled")
         }
     }
 

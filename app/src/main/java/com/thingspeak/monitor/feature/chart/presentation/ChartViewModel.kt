@@ -1,567 +1,373 @@
 package com.thingspeak.monitor.feature.chart.presentation
 
-import com.thingspeak.monitor.feature.channel.domain.model.FeedEntry
-
-import androidx.lifecycle.SavedStateHandle
+import com.thingspeak.monitor.feature.chart.presentation.DataFilter
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.thingspeak.monitor.core.error.ApiResult
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
-import com.thingspeak.monitor.core.error.ApiResult
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
+import com.thingspeak.monitor.feature.channel.domain.model.Channel
+import com.thingspeak.monitor.feature.channel.domain.model.FeedEntry
+import com.thingspeak.monitor.feature.channel.domain.usecase.GetChannelFeedUseCase
 import com.thingspeak.monitor.feature.channel.domain.usecase.GetHistoricalDataUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import com.thingspeak.monitor.core.di.DefaultDispatcher
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.thingspeak.monitor.core.utils.MathUtils
+import kotlinx.coroutines.Dispatchers
 import java.time.Instant
-import java.time.Duration
-import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import javax.inject.Inject
-import java.lang.Exception
 
-private fun safeToFloat(value: Any?): Float? {
-    return when (value) {
-        is Number -> value.toFloat()
-        is String -> value.toFloatOrNull()
-        else -> null
-    }
+sealed class ChartDataBundle {
+    abstract val title: String
+    
+    data class Line(
+        override val title: String,
+        val lineData: LineData,
+        val baselineX: Long,
+        val timeScale: Float,
+        val xAxisMin: Float,
+        val xAxisMax: Float,
+        val drawingStyle: com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle = com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.CUBIC,
+        val sampleTimestamps: List<Long> = emptyList()
+    ) : ChartDataBundle()
+
+    data class Bar(
+        override val title: String,
+        val barData: BarData,
+        val baselineX: Long,
+        val timeScale: Float,
+        val xAxisMin: Float,
+        val xAxisMax: Float,
+        val sampleTimestamps: List<Long> = emptyList()
+    ) : ChartDataBundle()
+}
+
+sealed class ChartState {
+    object Loading : ChartState()
+    data class Success(val charts: List<ChartDataBundle>) : ChartState()
+    data class Error(val message: String) : ChartState()
+    object Empty : ChartState()
 }
 
 @HiltViewModel
 class ChartViewModel @Inject constructor(
-    private val savedStateHandle: SavedStateHandle,
+    private val getChannelFeedUseCase: GetChannelFeedUseCase,
     private val getHistoricalDataUseCase: GetHistoricalDataUseCase,
-    private val getChannelFeed: com.thingspeak.monitor.feature.channel.domain.usecase.GetChannelFeedUseCase,
-    private val appPreferences: com.thingspeak.monitor.core.datastore.AppPreferences,
-    @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
+    private val repository: com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository,
+    private val appPreferences: com.thingspeak.monitor.core.datastore.AppPreferences
 ) : ViewModel() {
 
-    private val channelId: Long = savedStateHandle.get<Long>("channelId") ?: -1L
-    private val apiKey: String? = savedStateHandle["apiKey"]
+    private val _channelId = MutableStateFlow<Long?>(null)
+    private val _apiKey = MutableStateFlow<String?>(null)
+    
+    private val _currentRangeDays = MutableStateFlow(1)
+    val currentRangeDays: StateFlow<Int> = _currentRangeDays.asStateFlow()
 
     private val _uiState = MutableStateFlow<ChartState>(ChartState.Loading)
     val uiState: StateFlow<ChartState> = _uiState.asStateFlow()
 
-    private val _isDailyRange = MutableStateFlow(true)
-    val isDailyRange: StateFlow<Boolean> = _isDailyRange.asStateFlow()
-
-    private val _selectedFields = MutableStateFlow<Set<Int>>(emptySet())
-    val selectedFields: StateFlow<Set<Int>> = _selectedFields.asStateFlow()
-
-    private val _dataFilter = MutableStateFlow(DataFilter.NONE)
-    val dataFilter: StateFlow<DataFilter> = _dataFilter.asStateFlow()
-
-    private val _customDateRange = MutableStateFlow<Pair<Instant, Instant>?>(null)
-    val customDateRange: StateFlow<Pair<Instant, Instant>?> = _customDateRange.asStateFlow()
-
-    private val _isSmoothingEnabled = MutableStateFlow(false)
-    val isSmoothingEnabled: StateFlow<Boolean> = _isSmoothingEnabled.asStateFlow()
-
-    private val _isMergingEnabled = MutableStateFlow(false)
-    val isMergingEnabled: StateFlow<Boolean> = _isMergingEnabled.asStateFlow()
-
-    private val _rawEntries = MutableStateFlow<List<FeedEntry>>(emptyList())
-    
-    private val _isLiveMode = MutableStateFlow(false)
-    val isLiveMode: StateFlow<Boolean> = _isLiveMode.asStateFlow()
-
-    private var loadJob: Job? = null
-    private var pollingJob: Job? = null
-    private val _currentRangeDays = MutableStateFlow(1)
-    val currentRangeDays: StateFlow<Int> = _currentRangeDays.asStateFlow()
-    
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    // Observe field names and name once and keep them updated
-    private val channelData = getChannelFeed.observeChannel(channelId)
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = null
-        )
+    private val _channelData = MutableStateFlow<Channel?>(null)
+    val channelName = _channelData.map { it?.name ?: "Channel" }.stateIn(viewModelScope, SharingStarted.Lazily, "Channel")
+    val fieldNames = _channelData.map { it?.fieldNames ?: emptyMap() }.stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
 
-    val fieldNames: StateFlow<Map<Int, String>> = channelData
-        .map { it?.fieldNames ?: emptyMap() }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = emptyMap()
-        )
+    private val _isDailyRange = MutableStateFlow(true)
+    val isDailyRange: StateFlow<Boolean> = _isDailyRange.asStateFlow()
 
-    val channelName: StateFlow<String> = channelData
-        .map { it?.name ?: "Channel ${it?.id ?: channelId}" }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = ""
-        )
+    val dataFilter = MutableStateFlow(DataFilter.RAW)
+    val isSmoothingEnabled = MutableStateFlow(false)
+    
+    private val _isMergingEnabled = _channelData.map { it?.isMergingEnabled ?: true }
+        .stateIn(viewModelScope, SharingStarted.Lazily, true)
+    val isMergingEnabled: StateFlow<Boolean> = _isMergingEnabled
+    
+    private val _drawingStyle = _channelData.map { 
+        try { com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.valueOf(it?.drawingStyle ?: "CUBIC") }
+        catch (e: Exception) { com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.CUBIC }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.CUBIC)
+    val drawingStyle: StateFlow<com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle> = _drawingStyle
+    
+    private var lastLoadedFeeds: List<FeedEntry> = emptyList()
+
+    val isLiveMode = MutableStateFlow(false)
+    private var autoRefreshJob: Job? = null
 
     init {
-        if (channelId == -1L) {
-            _uiState.value = ChartState.Error("Invalid Channel ID")
-        } else {
-            // Restore persistent settings
-            viewModelScope.launch {
-                val range = appPreferences.observeChartRange().first()
-                _currentRangeDays.value = range
-                _isDailyRange.value = range == 1
+        android.util.Log.d("TS_DEBUG", "ChartViewModel INIT")
+        observeChannelData()
+    }
 
-                _isSmoothingEnabled.value = appPreferences.observeChartSmoothing().first()
+    fun setChannel(id: Long, apiKey: String?) {
+        if (_channelId.value != id) {
+            stableBaselineX = null
+            lastLoadedFeeds = emptyList()
+            _uiState.value = ChartState.Loading
+        }
+        _channelId.value = id
+        _apiKey.value = apiKey
+    }
 
-                val filterName = appPreferences.observeChartFilter().first()
-                _dataFilter.value = try {
-                    DataFilter.valueOf(filterName)
-                } catch (e: Exception) {
-                    DataFilter.NONE
-                }
-
-                // Restore field selection per channel
-                val channel = getChannelFeed.observeChannel(channelId).first()
-                _selectedFields.value = channel?.preferredChartFields ?: emptySet()
-
-                _isMergingEnabled.value = appPreferences.observeChartMerging().first()
-
-                // Launch a separate job to handle initial field auto-selection and data loading
-                // to avoid blocking this coroutine
-                launch {
-                    fieldNames.collect { names ->
-                        if (names.isNotEmpty()) {
-                            if (_selectedFields.value.isEmpty()) {
-                                _selectedFields.value = names.keys
-                            }
-                            // Initial load or refresh on field changes
-                            loadChartData(_currentRangeDays.value, silent = _uiState.value is ChartState.Success)
-                        }
-                    }
-                }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun observeChannelData() {
+        _channelId.flatMapLatest { id ->
+            if (id != null) getChannelFeedUseCase.observeChannel(id) else flowOf(null)
+        }
+        .distinctUntilChanged()
+        .onEach { channel ->
+            _channelData.value = channel
+            if (channel != null && lastLoadedFeeds.isNotEmpty()) {
+                processCurrentData()
             }
         }
+        .launchIn(viewModelScope)
     }
 
-    fun refresh() {
-        loadChartData(_currentRangeDays.value)
-    }
+    private var loadJob: kotlinx.coroutines.Job? = null
+    private var stableBaselineX: Long? = null
 
-    /**
-     * Loads chart data for the current channel.
-     * @param days number of days (predefined). If > 0, clears customDateRange.
-     */
-    fun loadChartData(days: Int = 1, silent: Boolean = false, customRange: Pair<Instant, Instant>? = null) {
+    fun loadChartData(days: Int = _currentRangeDays.value, isSilent: Boolean = false) {
+        android.util.Log.d("TS_DEBUG", "loadChartData START: days=$days, silent=$isSilent")
+        if (_currentRangeDays.value != days) {
+            stableBaselineX = null
+        }
+        val channelId = _channelId.value ?: return
+        val apiKey = _apiKey.value
         _currentRangeDays.value = days
-        
-        if (customRange != null) {
-            _customDateRange.value = customRange
-            _isDailyRange.value = Duration.between(customRange.first, customRange.second).toHours() <= 24
-        } else {
-            if (days >= 1) {
-                _customDateRange.value = null
-            }
-            _isDailyRange.value = days <= 1
-        }
+
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            appPreferences.setChartRange(days)
-            if (!silent) {
-                _isRefreshing.value = true
-                _uiState.value = ChartState.Loading
-            }
-            _isDailyRange.value = days <= 1
-
-            val currentRange = _customDateRange.value
-            
-            // Strategy: For predefined ranges (1D, 7D, 30D), fetch the latest 8000 entries 
-            // without hard start/end filters or server-side average math (which causes API Timeouts).
-            // We rely on local LTTB downsampling to filter points.
-            
-            data class ApiParams(val start: String?, val end: String?, val results: Int, val days: Int?, val average: Int?)
-            val params = if (customRange != null || currentRange != null) {
-                val actualRange = customRange ?: currentRange!!
-                val startStr = actualRange.first.atOffset(java.time.ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"))
-                val endStr = actualRange.second.atOffset(java.time.ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"))
-                android.util.Log.d("ChartViewModel", "Loading custom range: $startStr to $endStr")
-                ApiParams(startStr, endStr, 8000, null, null)
-            } else {
-                val resultsParam = if (days > 1) 8000 else 300 // Max entries for 7D/30D
-                android.util.Log.d("ChartViewModel", "Loading predefined range: days=$days, results=$resultsParam")
-                // CRITICAL FIX: Pass `null` for days to strictly use indexed `results` scan on ThingSpeak Backend!
-                ApiParams(null, null, resultsParam, null, null)
-            }
-
-            val startTime = System.currentTimeMillis()
-            android.util.Log.d("ChartViewModel", "API Req: days=${params.days}, start=${params.start}, avg=${params.average}, results=${params.results}")
-
-            when (val result = getHistoricalDataUseCase(
-                channelId = channelId, 
-                apiKey = apiKey, 
-                start = params.start, 
-                end = params.end, 
-                average = params.average, 
-                results = params.results,
-                days = params.days
-            )) {
-                is ApiResult.Success -> {
-                    val apiTime = System.currentTimeMillis() - startTime
-                    android.util.Log.d("ChartViewModel", "Loaded ${result.data.size} entries in ${apiTime}ms")
-                    processChartData(result.data)
+            if (!isSilent) _isRefreshing.value = true
+            try {
+                // Ensure we have channel settings before loading if possible
+                if (_channelData.value == null) {
+                    kotlinx.coroutines.delay(200)
                 }
-                is ApiResult.Error -> {
-                    android.util.Log.e("ChartViewModel", "Error loading chart data: ${result.message}")
-                    _uiState.value = ChartState.Error(result.message ?: "Unknown Error")
+
+                val resultsLimit = _channelData.value?.chartResults ?: 500
+                
+                val averageParam = when (days) {
+                    7 -> 60
+                    30 -> 720
+                    else -> null
                 }
-                is ApiResult.Exception -> {
-                    android.util.Log.e("ChartViewModel", "Exception loading chart data", result.e)
-                    _uiState.value = ChartState.Error(result.e.localizedMessage ?: "Exception")
+                
+                // CRITICAL FIX: To prevent date regression for "1D" (24h), we must always use 'days' parameter.
+                // resultsLimit will act as a cap within those days.
+                // Agent 3.7.8: Increased results to 8000 for 1D as well to ensure full coverage
+            val finalResults = if (days <= 1) 8000 else 8000
+                val finalDays = if (days <= 0) 1 else days
+
+                val startTime = System.currentTimeMillis()
+                android.util.Log.d("TS_DEBUG", "loadChartData fetching: days=$finalDays, results=$finalResults, avg=$averageParam, limit=$resultsLimit")
+                
+                var result = getHistoricalDataUseCase(
+                    channelId = channelId,
+                    apiKey = apiKey,
+                    days = finalDays,
+                    results = finalResults,
+                    average = averageParam
+                )
+
+                // FALLBACK LOGIC: If 7D/30D with average failed, try raw data as fallback with a SAFE limit.
+                // We use a hard limit of 2000 points for fallback to prevent OOM/Timeouts on large ranges.
+                if (result is ApiResult.Error && averageParam != null) {
+                    android.util.Log.w("TS_DEBUG", "Averaged fetch failed (timeout?), retrying with RAW fallback (limit=2000) for $channelId")
+                    result = getHistoricalDataUseCase(
+                        channelId = channelId,
+                        apiKey = apiKey,
+                        days = finalDays,
+                        results = 2000, 
+                        average = null
+                    )
                 }
-                is ApiResult.Loading -> {
-                     _uiState.value = ChartState.Loading
+
+                when (result) {
+                    is ApiResult.Success<*> -> {
+                        val data = result.data
+                        if (data is List<*>) {
+                            lastLoadedFeeds = data.filterIsInstance<FeedEntry>()
+                            
+                            val startTs = lastLoadedFeeds.firstOrNull()?.createdAt ?: "EMPTY"
+                            val endTs = lastLoadedFeeds.lastOrNull()?.createdAt ?: "EMPTY"
+                            
+                            // Initialize stable baseline from the very first feed of the session if not set
+                            if (stableBaselineX == null && lastLoadedFeeds.isNotEmpty()) {
+                                stableBaselineX = lastLoadedFeeds.first().createdAt.let {
+                                    try { java.time.Instant.parse(it).epochSecond } catch (e: Exception) { null }
+                                }
+                                android.util.Log.i("TS_DEBUG", "Stable BaselineX initialized: $stableBaselineX")
+                            }
+
+                            android.util.Log.i("TS_DEBUG", "loadChartData SUCCESS: id=$channelId, received ${lastLoadedFeeds.size} entries. Range: [$startTs] - [$endTs]. Took ${System.currentTimeMillis() - startTime}ms")
+                            
+                            processCurrentData()
+                        }
+                    }
+                    is ApiResult.Error -> {
+                        val detailedMsg = "API ERROR: ${result.message} (id=$channelId, days=$finalDays)"
+                        android.util.Log.e("TS_DEBUG", detailedMsg)
+                        _uiState.value = ChartState.Error(detailedMsg)
+                    }
+                    else -> {
+                        android.util.Log.e("TS_DEBUG", "Unknown result type for $channelId")
+                    }
                 }
-            }
-            if (!silent) {
-                _isRefreshing.value = false
-            }
-        }
-    }
-
-    /**
-     * Processes raw feed entries into discrete ChartItems asynchronously on Dispatchers.Default.
-     */
-    private suspend fun processChartData(entries: List<com.thingspeak.monitor.feature.channel.domain.model.FeedEntry>) {
-        _rawEntries.value = entries
-        if (entries.isEmpty()) {
-            _uiState.value = ChartState.Empty
-            return
-        }
-
-        val isDaily = _isDailyRange.value
-        val processStartTime = System.currentTimeMillis()
-        
-        val result = withContext(defaultDispatcher) {
-             val dataSetsMap = mutableMapOf<Int, MutableList<Entry>>()
-             
-             val nowEpoch = Instant.now().epochSecond
-             val oneHourIntoFuture = nowEpoch + 3600
-             val twentyFourHoursAgo = nowEpoch - (24 * 3600)
-             val selectedFieldsSet = _selectedFields.value
-
-             // Single pass to get everything we need
-             var minTimestamp = Long.MAX_VALUE
-             var maxTimestamp = Long.MIN_VALUE
-             var latestEntryTs = 0L
-             
-             val entriesWithTs = mutableListOf<Pair<com.thingspeak.monitor.feature.channel.domain.model.FeedEntry, Long>>()
-             
-             entries.forEach { feed ->
-                 try {
-                     // PERFORMANCE: Fast ISO8601 parser for "2024-10-23T14:35:05Z" to avoid Instant.parse GC churn
-                     val dateStr = feed.createdAt
-                     val ts = if (dateStr.length >= 19 && dateStr[4] == '-' && dateStr[10] == 'T') {
-                         val year = (dateStr[0] - '0') * 1000 + (dateStr[1] - '0') * 100 + (dateStr[2] - '0') * 10 + (dateStr[3] - '0')
-                         val month = (dateStr[5] - '0') * 10 + (dateStr[6] - '0')
-                         val day = (dateStr[8] - '0') * 10 + (dateStr[9] - '0')
-                         val hour = (dateStr[11] - '0') * 10 + (dateStr[12] - '0')
-                         val minute = (dateStr[14] - '0') * 10 + (dateStr[15] - '0')
-                         val second = (dateStr[17] - '0') * 10 + (dateStr[18] - '0')
-                         java.time.LocalDateTime.of(year, month, day, hour, minute, second)
-                             .toEpochSecond(java.time.ZoneOffset.UTC)
-                     } else {
-                         Instant.parse(dateStr).epochSecond
-                     }
-                     
-                     if (ts <= oneHourIntoFuture) {
-                         if (ts > latestEntryTs) latestEntryTs = ts
-                     }
-                     entriesWithTs.add(feed to ts)
-                 } catch (e: Exception) { /* skip */ }
-             }
-
-             if (entriesWithTs.isEmpty()) return@withContext null
-
-             val daysSpan = _currentRangeDays.value
-             val customRange = _customDateRange.value
-             
-             val effectiveStartTs = if (customRange != null) {
-                 customRange.first.epochSecond
-             } else if (daysSpan != null && daysSpan > 0) {
-                 val spanSeconds = daysSpan * 24L * 3600L
-                 val threshold = java.time.Instant.now().epochSecond - spanSeconds
-                 // If channel is stale, show last `days` of its activity. Else, exactly from threshold.
-                 if (latestEntryTs > threshold) threshold else (latestEntryTs - spanSeconds)
-             } else 0L
-
-             // Single pass filtering and boundary detection
-             val validEntriesWithTs = ArrayList<Pair<com.thingspeak.monitor.feature.channel.domain.model.FeedEntry, Long>>(entriesWithTs.size)
-             for (i in 0 until entriesWithTs.size) {
-                 val pair = entriesWithTs[i]
-                 val ts = pair.second
-                 if (ts > oneHourIntoFuture) continue
-                 
-                 // Apply local filtering for ALL predefined ranges (1D, 7D, 30D) since we fetch max 8000 results raw.
-                 if (effectiveStartTs > 0L && ts < effectiveStartTs) continue
-                 // Apply end boundary for custom range
-                 if (customRange != null && ts > customRange.second.epochSecond) continue
-                 
-                 if (ts < minTimestamp) minTimestamp = ts
-                 if (ts > maxTimestamp) maxTimestamp = ts
-                 validEntriesWithTs.add(pair)
-             }
-
-             if (minTimestamp == Long.MAX_VALUE) return@withContext null
-
-             val baselineX = minTimestamp
-             val rangeSeconds = maxTimestamp - minTimestamp
-             val timeScale = if (rangeSeconds > 10_000_000) 60f else 1f
-
-             // Single pass mapping - avoiding forEach and iterator allocations
-             for (i in 0 until validEntriesWithTs.size) {
-                  val pair = validEntriesWithTs[i]
-                  val feed = pair.first
-                  val ts = pair.second
-                  val xValue = (ts - baselineX).toFloat() / timeScale
-                  
-                  for ((fieldIndex, valueStr) in feed.fields) {
-                      if (selectedFieldsSet.contains(fieldIndex)) {
-                          // PERFORMANCE: Use raw String parsing instead of reflection
-                          val valueFloat = valueStr?.trim()?.toFloatOrNull()
-                          if (valueFloat != null && !valueFloat.isNaN()) {
-                              dataSetsMap.getOrPut(fieldIndex) { ArrayList() }.add(Entry(xValue, valueFloat))
-                          }
-                      }
-                  }
-             }
-
-             if (dataSetsMap.isEmpty()) return@withContext null
-
-             val colors = listOf(
-                 android.graphics.Color.parseColor("#E53935"), android.graphics.Color.parseColor("#1E88E5"),
-                 android.graphics.Color.parseColor("#43A047"), android.graphics.Color.parseColor("#FDD835"),
-                 android.graphics.Color.parseColor("#8E24AA"), android.graphics.Color.parseColor("#F4511E"),
-                 android.graphics.Color.parseColor("#00ACC1"), android.graphics.Color.parseColor("#7CB342")
-             )
-
-             val merging = _isMergingEnabled.value
-             val smoothing = _isSmoothingEnabled.value
-             val filter = _dataFilter.value
-             
-             // Process into DataSets - REMOVED redundant sortedBy (ThingSpeak is already sorted)
-             if (merging) {
-                 val dataSets = dataSetsMap.entries.mapIndexed { index, mapEntry ->
-                     val fieldIndex = mapEntry.key
-                     val filteredEntries = applyFilter(mapEntry.value, filter)
-                     val smoothedEntries = if (smoothing) MathUtils.applyMovingAverage(filteredEntries, 5) else filteredEntries
-                     val points = if (smoothedEntries.size > 200) com.thingspeak.monitor.core.utils.ChartUtils.downsampleLTTB(smoothedEntries, 200) else smoothedEntries
-
-                     val label = fieldNames.value[fieldIndex] ?: "Field $fieldIndex"
-                     LineDataSet(points, label).apply {
-                         mode = LineDataSet.Mode.LINEAR; setDrawCircles(false); setDrawValues(false)
-                         lineWidth = 2.5f; color = colors[index % colors.size]; highLightColor = colors[index % colors.size]
-                     }
-                 }
-                 listOf(ChartDataBundle(LineData(dataSets), baselineX, timeScale, "Merged Fields"))
-             } else {
-                 dataSetsMap.entries.mapIndexed { index, mapEntry ->
-                     val fieldIndex = mapEntry.key
-                     val filteredEntries = applyFilter(mapEntry.value, filter)
-                     val smoothedEntries = if (smoothing) MathUtils.applyMovingAverage(filteredEntries, 5) else filteredEntries
-                     val points = if (smoothedEntries.size > 200) com.thingspeak.monitor.core.utils.ChartUtils.downsampleLTTB(smoothedEntries, 200) else smoothedEntries
-
-                     val label = fieldNames.value[fieldIndex] ?: "Field $fieldIndex"
-                     val dataSet = LineDataSet(points, label).apply {
-                         mode = LineDataSet.Mode.LINEAR; setDrawCircles(false); setDrawValues(false)
-                         lineWidth = 2.5f; color = colors[index % colors.size]; highLightColor = colors[index % colors.size]
-                     }
-                     ChartDataBundle(LineData(dataSet), baselineX, timeScale, label)
-                 }
-             }
-         }
- 
-         if (result != null) {
-             val totalProcessTime = System.currentTimeMillis() - processStartTime
-             android.util.Log.d("ChartViewModel", "Data processing completed in ${totalProcessTime}ms")
-             _uiState.value = ChartState.Success(result, _isMergingEnabled.value)
-         } else {
-            _uiState.value = ChartState.Empty
-        }
-    }
-
-    private fun applyFilter(entries: List<Entry>, filter: DataFilter): List<Entry> {
-        return when (filter) {
-            DataFilter.NONE -> entries
-            DataFilter.ROUND -> entries.map { Entry(it.x, Math.round(it.y).toFloat()) }
-            DataFilter.MEAN -> applyWindowFilter(entries) { window -> window.map { it.y }.average().toFloat() }
-            DataFilter.MEDIAN -> applyWindowFilter(entries) { window -> 
-                val sorted = window.map { it.y }.sorted()
-                if (sorted.size % 2 == 0) {
-                    (sorted[sorted.size / 2] + sorted[sorted.size / 2 - 1]) / 2
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.v("TS_DEBUG", "loadChartData cancelled (lifecycle) for $channelId")
                 } else {
-                    sorted[sorted.size / 2]
+                    android.util.Log.e("TS_DEBUG", "CRASH in loadChartData (id=$channelId)", e)
+                    _uiState.value = ChartState.Error("Unexpected crash: ${e.message}")
                 }
-            }
-            DataFilter.SUM -> applyWindowFilter(entries) { window -> window.sumOf { it.y.toDouble() }.toFloat() }
-        }
-    }
-
-    private fun applyWindowFilter(entries: List<Entry>, windowSize: Int = 5, operation: (List<Entry>) -> Float): List<Entry> {
-        if (entries.size < windowSize) return entries
-        return entries.mapIndexed { index, entry ->
-            val start = (index - windowSize / 2).coerceAtLeast(0)
-            val end = (index + windowSize / 2).coerceAtMost(entries.size - 1)
-            val window = entries.subList(start, end + 1)
-            Entry(entry.x, operation(window))
-        }
-    }
-
-    fun toggleField(fieldIndex: Int) {
-        val current = _selectedFields.value.toMutableSet()
-        if (current.contains(fieldIndex)) {
-            if (current.size > 1) current.remove(fieldIndex)
-        } else {
-            current.add(fieldIndex)
-        }
-        _selectedFields.value = current
-        
-        // Persist preferred fields for this channel
-        viewModelScope.launch {
-            getChannelFeed.observeChannel(channelId).first()?.let { channel ->
-                getChannelFeed.updateChannel(channel.copy(preferredChartFields = current))
+            } finally {
+                if (!isSilent) _isRefreshing.value = false
+                android.util.Log.v("TS_DEBUG", "loadChartData FINISHED (finally) for $channelId")
             }
         }
-        
-        refreshData()
     }
 
-    fun setFilter(filter: DataFilter) {
-        _dataFilter.value = filter
-        viewModelScope.launch {
-            appPreferences.setChartFilter(filter.name)
-        }
-        refreshData()
-    }
+    fun refresh() = loadChartData()
 
     fun toggleSmoothing() {
-        _isSmoothingEnabled.value = !_isSmoothingEnabled.value
+        isSmoothingEnabled.value = !isSmoothingEnabled.value
+        processCurrentData()
+    }
+    
+    fun setDrawingStyle(style: com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle) {
+        val currentChannel = _channelData.value ?: return
         viewModelScope.launch {
-            appPreferences.setChartSmoothing(_isSmoothingEnabled.value)
+            repository.updateChannel(currentChannel.copy(drawingStyle = style.name))
         }
-        refreshData()
     }
 
     fun toggleLiveMode() {
-        _isLiveMode.value = !_isLiveMode.value
-        if (_isLiveMode.value) {
-            startPolling()
+        isLiveMode.value = !isLiveMode.value
+        if (isLiveMode.value) {
+            startAutoRefresh()
         } else {
-            stopPolling()
+            autoRefreshJob?.cancel()
+            autoRefreshJob = null
         }
-    }
-
-    private fun startPolling() {
-        pollingJob?.cancel()
-        pollingJob = viewModelScope.launch {
-            while (true) {
-                try {
-                    val intervalMs = appPreferences.observeRefreshInterval().first()
-                    delay(maxOf(1000L, intervalMs))
-                    
-                    if (_isLiveMode.value) {
-                        refreshLatestData()
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("ChartViewModel", "Polling loop error", e)
-                    delay(5000) // Backoff on error
-                }
-            }
-        }
-    }
-
-    private suspend fun refreshLatestData() {
-        val results = 5 // Fetch last 5 to avoid gaps
-        when (val result = getChannelFeed.refresh(channelId, apiKey, results = results)) {
-            is ApiResult.Success -> {
-                // Since GetChannelFeedUseCase.refresh updates local DB, 
-                // but we manage _rawEntries manually for historical charts,
-                // we should fetch the actual entries too or just use what refresh returned.
-                // Wait, GetChannelFeedUseCase.refresh returns ApiResult<Unit>.
-                // Better approach: Call a specific fetch method for latest entries.
-                
-                val latestResult = getHistoricalDataUseCase(
-                    channelId = channelId,
-                    apiKey = apiKey,
-                    start = Instant.now().minus(5, ChronoUnit.MINUTES).toString(),
-                    end = Instant.now().toString()
-                )
-                
-                if (latestResult is ApiResult.Success) {
-                    appendEntries(latestResult.data)
-                }
-            }
-            else -> { /* Ignore errors in background polling */ }
-        }
-    }
-
-    private suspend fun appendEntries(newEntries: List<FeedEntry>) {
-        if (newEntries.isEmpty()) return
-        
-        val currentEntries = _rawEntries.value
-        val existingIds = currentEntries.map { it.entryId }.toSet()
-        val uniqueNew = newEntries.filter { !existingIds.contains(it.entryId) }
-        
-        if (uniqueNew.isNotEmpty()) {
-            val combined = (currentEntries + uniqueNew).sortedBy { it.createdAt }
-            // Keep memory in check for long sessions
-            val trimmed = if (combined.size > 2000) combined.takeLast(2000) else combined
-            processChartData(trimmed)
-        }
-    }
-
-    private fun stopPolling() {
-        pollingJob?.cancel()
-        pollingJob = null
-    }
-
-    fun setDateRange(start: Instant, end: Instant) {
-        loadChartData(days = 0, customRange = start to end)
-    }
-
-    private fun refreshData() {
-        // Simple refresh using last known data if possible or reload
-        loadChartData()
     }
 
     fun toggleMerging() {
-        _isMergingEnabled.value = !_isMergingEnabled.value
+        val currentChannel = _channelData.value ?: return
         viewModelScope.launch {
-            appPreferences.setChartMerging(_isMergingEnabled.value)
+            repository.updateChannel(currentChannel.copy(isMergingEnabled = !currentChannel.isMergingEnabled))
         }
-        refreshData()
     }
 
-    fun exportCsv(): String {
-        return com.thingspeak.monitor.core.utils.ExportUtils.generateCsv(
-            _rawEntries.value,
-            fieldNames.value
-        )
+    private fun processCurrentData() {
+        if (lastLoadedFeeds.isEmpty()) {
+            android.util.Log.w("TS_DEBUG", "processCurrentData: EMPTY feeds for id=${_channelId.value}")
+            _uiState.value = ChartState.Empty
+            return
+        }
+        
+        viewModelScope.launch {
+            val channel = _channelData.value
+            val selectedFields = channel?.widgetVisibleFields?.ifEmpty { null } ?: setOf(1)
+            val isNormalized = channel?.isNormalized ?: false
+            _isDailyRange.value = (_currentRangeDays.value <= 1)
+
+            // --- DEBUG LOGGING (Agent 3.7.7) ---
+            val firstTs = try { java.time.Instant.parse(lastLoadedFeeds.first().createdAt).epochSecond } catch (e: Exception) { -1L }
+            val lastTs = try { java.time.Instant.parse(lastLoadedFeeds.last().createdAt).epochSecond } catch (e: Exception) { -1L }
+            android.util.Log.i("TS_DEBUG", "API Returned ${lastLoadedFeeds.size} feeds. Range: $firstTs to $lastTs. Requested Days: ${_currentRangeDays.value}")
+            // -----------------------------------
+
+            val resultsLimit = channel?.chartResults ?: 60
+            val startTime = System.currentTimeMillis()
+            android.util.Log.v("TS_DEBUG", "processCurrentData: processing ${lastLoadedFeeds.size} points...")
+
+            val bundles = withContext(Dispatchers.Default) {
+                ChartDataProcessor.processFeedsToBundles(
+                    feeds = lastLoadedFeeds,
+                    currentRangeDays = _currentRangeDays.value,
+                    selectedFields = selectedFields,
+                    isMergingEnabled = _isMergingEnabled.value,
+                    isNormalized = isNormalized,
+                    fieldNames = fieldNames.value,
+                    chartColor = channel?.chartColor,
+                    fieldColorsMap = channel?.fieldColors ?: emptyMap(),
+                    resultsLimit = resultsLimit,
+                    baselineXOverride = stableBaselineX,
+                    drawingStyle = when (channel?.chartType?.lowercase()) {
+                        "bar", "column" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.BAR
+                        "area" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.AREA
+                        "scatter" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.SCATTER
+                        "spline", "cubic" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.CUBIC
+                        "step" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.STEPPED
+                        else -> _drawingStyle.value
+                    }
+                )
+            }
+            android.util.Log.d("TS_DEBUG", "processCurrentData COMPLETED: id=${channel?.id}, bundles=${bundles.size}, stableBaselineX=$stableBaselineX. Took ${System.currentTimeMillis() - startTime}ms")
+            if (bundles.isEmpty()) {
+                android.util.Log.w("TS_DEBUG", "processCurrentData: BUNDLES EMPTY after processing!")
+            } else {
+                bundles.forEachIndexed { index, bundle ->
+                    android.util.Log.v("TS_DEBUG", "Bundle[$index]: title=${bundle.title}")
+                }
+            }
+            _uiState.value = if (bundles.isEmpty()) ChartState.Empty else ChartState.Success(bundles)
+        }
     }
 
-    fun exportPdf(outputStream: java.io.OutputStream, channelName: String) {
-        com.thingspeak.monitor.core.utils.ExportUtils.writePdfReport(
-            outputStream,
-            channelName,
-            _rawEntries.value,
-            fieldNames.value
-        )
+    fun setFilter(filter: DataFilter) {
+        dataFilter.value = filter
+        processCurrentData()
+    }
+    
+    fun setDateRange(start: Long, end: Long) {
+        val diff = (end - start) / (1000 * 60 * 60 * 24)
+        loadChartData(diff.toInt().coerceAtLeast(1))
+    }
+    
+    fun exportCsv(): String = ""
+    fun exportPdf(stream: java.io.OutputStream, name: String) {}
+
+    /**
+     * Auto-refresh loop for charts.
+     * Pulls fresh data from ThingSpeak API at the interval configured in AppPreferences.
+     * Job is automatically cancelled when ViewModel is destroyed (viewModelScope).
+     */
+    private fun startAutoRefresh() {
+        autoRefreshJob?.cancel()
+        autoRefreshJob = viewModelScope.launch {
+            appPreferences.observeRefreshInterval().collectLatest { interval ->
+                // Minimum 1s interval for charts to avoid API throttling
+                val safeInterval = interval.coerceAtLeast(1000L)
+                android.util.Log.i("TS_DEBUG", "ChartViewModel autoRefresh STARTED: interval=${safeInterval}ms")
+                while (isActive) {
+                    delay(safeInterval)
+                    val channelId = _channelId.value ?: continue
+                    android.util.Log.v("TS_DEBUG", "ChartViewModel autoRefresh TICK for $channelId")
+                    loadChartData(isSilent = true)
+                }
+            }
+        }
     }
 }

@@ -20,7 +20,8 @@ class ThingSpeakMarkerView(
     context: Context,
     private val isDaily: Boolean,
     var baselineX: Long = 0L,
-    var timeScale: Float = 1f
+    var timeScale: Float = 1f,
+    var sampleTimestamps: List<Long> = emptyList()
 ) : MarkerView(context, R.layout.layout_chart_marker) {
 
     private val tvContent: TextView = findViewById(R.id.tvContent)

@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.Alignment
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Edit
@@ -33,6 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.thingspeak.monitor.R
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
+import com.thingspeak.monitor.core.datastore.SavedChannel
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.Icons
 
 /**
  * Premium channel card item.
@@ -42,11 +44,11 @@ import com.thingspeak.monitor.core.datastore.ChannelPreferences
  */
 @Composable
 fun ChannelCard(
-    channel: ChannelPreferences.SavedChannel,
-    onClick: (ChannelPreferences.SavedChannel) -> Unit,
+    channel: SavedChannel,
+    onClick: (SavedChannel) -> Unit,
     onRemoveClick: (Long) -> Unit,
     onSettingsClick: (Long) -> Unit,
-    onEditClick: (ChannelPreferences.SavedChannel) -> Unit,
+    onEditClick: (SavedChannel) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -108,6 +110,31 @@ fun ChannelCard(
                     )
                 }
                 
+                // Visual Indicator of Chart Type
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp)
+                        .background(
+                            color = Color(android.graphics.Color.parseColor(channel.chartColor ?: "#2196F3")).copy(alpha = 0.15f),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val label = when(channel.chartType?.lowercase()) {
+                        "spline" -> "SPL"
+                        "bar" -> "BAR"
+                        "step" -> "STP"
+                        else -> "LIN"
+                    }
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(android.graphics.Color.parseColor(channel.chartColor ?: "#2196F3"))
+                    )
+                }
+                
                 IconButton(
                     onClick = { onEditClick(channel) },
                     modifier = Modifier.size(40.dp)
@@ -153,7 +180,7 @@ fun ChannelCard(
 fun ChannelCardPreview() {
     com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme {
         ChannelCard(
-            channel = ChannelPreferences.SavedChannel(
+            channel = SavedChannel(
                 id = 12345,
                 name = "Test Channel",
                 apiKey = "API_KEY"

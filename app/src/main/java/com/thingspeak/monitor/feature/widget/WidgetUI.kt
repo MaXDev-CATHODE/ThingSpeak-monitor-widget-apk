@@ -1,449 +1,279 @@
 package com.thingspeak.monitor.feature.widget
 
-import android.graphics.Bitmap
 import android.content.Context
 import androidx.compose.runtime.Composable
-import com.thingspeak.monitor.MainActivity
-import com.thingspeak.monitor.R
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
-import androidx.glance.GlanceTheme
-import androidx.glance.action.actionStartActivity
+import androidx.glance.ImageProvider
+import androidx.glance.LocalContext
+import androidx.glance.LocalSize
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.background
-import androidx.glance.layout.Alignment
-import androidx.glance.layout.Box
-import androidx.glance.layout.Column
-import androidx.glance.layout.Row
+import androidx.glance.layout.*
 import androidx.glance.layout.Spacer
-import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.fillMaxWidth
-import androidx.glance.layout.height
-import androidx.glance.layout.padding
-import androidx.glance.layout.width
-import androidx.glance.layout.size
-import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.LocalSize
-import androidx.glance.appwidget.cornerRadius
+import androidx.glance.unit.ColorProvider
 import androidx.compose.ui.graphics.Color
-
+import androidx.glance.Image
+import androidx.glance.appwidget.cornerRadius
+import androidx.glance.text.FontWeight
+import androidx.glance.unit.ColorProvider as GlanceColorProvider
 import com.thingspeak.monitor.feature.channel.data.local.FeedEntryEntity
-import com.thingspeak.monitor.feature.widget.WidgetConfigActivity
+import androidx.glance.Button
+import androidx.glance.text.TextAlign
+import androidx.glance.unit.ColorProvider as GColor
 
-/**
- * Snapshot of data for widget rendering.
- */
 data class WidgetData(
-    val channelName: String,
+    val channelName: String?,
     val channelId: Long,
     val entry: FeedEntryEntity?,
     val fieldNames: Map<Int, String> = emptyMap(),
-    val bgColorHex: String? = null,
+    val fieldUnits: Map<Int, String> = emptyMap(),
+    val bgColorHex: String? = "#FFFFFF",
+    val textColor: String? = "#000000",
     val transparency: Float = 1.0f,
     val fontSize: Int = 12,
+    val chartRounding: Int = 2,
+    val chartResults: Int = 60,
     val isGlass: Boolean = false,
-    val activeAlertFields: Set<Int> = emptySet(),
+    val violatedMinFields: Set<Int> = emptySet(),
+    val violatedMaxFields: Set<Int> = emptySet(),
+    val minSetFields: Set<Int> = emptySet(),
+    val maxSetFields: Set<Int> = emptySet(),
     val syncIntervalMinutes: Long = 30,
     val lastSyncTime: Long = 0L,
-    val lastSyncStatus: String = "SUCCESS",
+    val lastSyncStatus: String = "NONE",
     val visibleFields: Set<Int>? = null,
+    val chartType: String? = "line",
     val chartBitmap: android.graphics.Bitmap? = null,
-    val isRefreshing: Boolean = false,
-    val isLoading: Boolean = false,
-    val debugInfo: String = ""
+    val isRefreshing: Boolean = false
 )
 
 @Composable
-fun NoDataContent(context: Context, channelName: String = "") {
-    Box(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .padding(8.dp)
-            .background(GlanceTheme.colors.surface)
-            .clickable(actionStartActivity<com.thingspeak.monitor.MainActivity>()),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (channelName.isNotBlank()) {
-                Text(
-                    text = channelName,
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    ),
-                    maxLines = 1
-                )
-                Spacer(modifier = GlanceModifier.height(4.dp))
-            }
-            Text(
-                text = context.getString(com.thingspeak.monitor.R.string.dashboard_empty_title),
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurface,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-            )
-            Spacer(modifier = GlanceModifier.height(4.dp))
-            Text(
-                text = context.getString(com.thingspeak.monitor.R.string.widget_no_data),
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 12.sp
-                )
-            )
-        }
-    }
-}
-
-@Composable
-fun WidgetLoadingUI(context: Context, debugInfo: String = "") {
-    Box(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .padding(8.dp)
-            .background(GlanceTheme.colors.surface)
-            .clickable(actionStartActivity<MainActivity>()),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            androidx.glance.layout.Spacer(modifier = GlanceModifier.height(8.dp))
-            Text(
-                text = context.getString(R.string.widget_loading),
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            )
-            if (debugInfo.isNotBlank()) {
-                Spacer(modifier = GlanceModifier.height(4.dp))
-                Text(
-                    text = "Status: $debugInfo",
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onSurfaceVariant,
-                        fontSize = 10.sp
-                    ),
-                    maxLines = 2
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun WidgetErrorUI(context: Context, message: String) {
-    Box(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .padding(8.dp)
-            .background(GlanceTheme.colors.errorContainer)
-            .clickable(actionStartActivity<MainActivity>()),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = context.getString(R.string.widget_error_title),
-                style = TextStyle(
-                    color = GlanceTheme.colors.onErrorContainer,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
-            )
-            Text(
-                text = message,
-                style = TextStyle(
-                    color = GlanceTheme.colors.onErrorContainer,
-                    fontSize = 11.sp
-                )
-            )
-        }
-    }
-}
-
-@Composable
-fun WidgetConfigReqUI(context: Context) {
-    GlanceTheme {
-        Box(
-            modifier = GlanceModifier
-                .fillMaxSize()
-                .background(GlanceTheme.colors.surface)
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                verticalAlignment = Alignment.CenterVertically) {
-                androidx.glance.Image(
-                    provider = androidx.glance.ImageProvider(android.R.drawable.ic_menu_preferences), // More appropriate system settings icon
-                    contentDescription = context.getString(R.string.widget_configure_title),
-                    modifier = GlanceModifier.size(48.dp),
-                    colorFilter = androidx.glance.ColorFilter.tint(GlanceTheme.colors.primary)
-                )
-                Spacer(modifier = GlanceModifier.height(8.dp))
-                Text(
-                    text = "No channel selected",
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onSurface,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                )
-                Spacer(modifier = GlanceModifier.height(4.dp))
-                Text(
-                    text = "Tap 'CFG' to setup widget",
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onSurfaceVariant,
-                        fontSize = 11.sp
-                    )
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun WidgetContent(context: Context, data: WidgetData) {
+fun WidgetUI(data: WidgetData) {
+    val context = LocalContext.current
     val size = LocalSize.current
-    val isSmallHeight = size.height.value < 120f
-    val isNarrow = size.width.value < 150f
-
-    val isStale = data.entry?.let { 
-        WidgetUtils.isDataStale(it.createdAt, data.syncIntervalMinutes * 60 * 1000L) 
-    } ?: true
-
-    val baseColor = data.bgColorHex?.let { 
-        try { android.graphics.Color.parseColor(it) } catch (e: Exception) { android.graphics.Color.WHITE }
-    } ?: android.graphics.Color.WHITE
-
-    val isDarkBg = isColorDark(baseColor)
-    val contentColor = if (isDarkBg) Color.White else Color.Black
-    val secondaryContentColor = if (isDarkBg) Color.LightGray else Color.DarkGray
-
-    val bgColor = if (data.isGlass) {
-        androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f)
-    } else {
-        androidx.compose.ui.graphics.Color(baseColor).copy(alpha = data.transparency)
+    
+    // Dynamic sizing based on widget dimensions
+    val isCompact = size.height < 140.dp || size.width < 200.dp
+    val isTiny = size.height < 100.dp || size.width < 150.dp
+    
+    // Scale font sizes dynamically
+    val titleSize = when {
+        isTiny -> 10
+        isCompact -> 11
+        else -> minOf(data.fontSize + 2, 14)
     }
+    val fieldSize = when {
+        isTiny -> 8
+        isCompact -> 9
+        else -> minOf(data.fontSize, 11)
+    }
+    val subSize = when {
+        isTiny -> 7
+        isCompact -> 8
+        else -> minOf(data.fontSize - 2, 9)
+    }
+    val pad = if (isCompact) 4 else 8
+    
+    val bgColor = try {
+        val hex = data.bgColorHex?.removePrefix("#") ?: "FFFFFF"
+        val alpha = (data.transparency * 255).toInt().toString(16).padStart(2, '0')
+        Color(android.graphics.Color.parseColor("#$alpha$hex"))
+    } catch (e: Exception) {
+        Color.White.copy(alpha = data.transparency)
+    }
+
+    val isDarkBg = isColorDark(android.graphics.Color.parseColor(data.bgColorHex ?: "#FFFFFF"))
+    val textColor = try {
+        val tc = data.textColor
+        if (tc != null && tc.startsWith("#")) {
+            Color(android.graphics.Color.parseColor(tc))
+        } else {
+            // Auto-contrast
+            if (isDarkBg) Color.White else Color.Black
+        }
+    } catch (e: Exception) {
+        if (isDarkBg) Color.White else Color.Black
+    }
+    
+    val buttonBg = if (isDarkBg) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f)
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .padding(if (isSmallHeight) 4.dp else 12.dp)
-            .background(bgColor)
-            .cornerRadius(16.dp),
+            .background(GlanceColorProvider(bgColor))
+            .cornerRadius(12.dp)
+            .padding(pad.dp)
     ) {
         // Header
         Row(
-            modifier = GlanceModifier.fillMaxWidth().padding(bottom = if (isSmallHeight) 0.dp else 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = GlanceModifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (!isNarrow || !isSmallHeight) {
+            Column(modifier = GlanceModifier.defaultWeight()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = data.channelName ?: "ThingSpeak",
+                        style = TextStyle(
+                            color = GlanceColorProvider(textColor),
+                            fontSize = titleSize.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        maxLines = 1
+                    )
+                    if (data.lastSyncStatus == "ERROR_SYNC") {
+                        Spacer(GlanceModifier.width(2.dp))
+                        Text(
+                            text = "⚠",
+                            style = TextStyle(
+                                color = GlanceColorProvider(Color.Red),
+                                fontSize = titleSize.sp
+                            )
+                        )
+                    }
+                }
+                if (!isTiny && data.entry != null) {
+                    Text(
+                        text = "Sync: Just now",
+                        style = TextStyle(
+                            color = GlanceColorProvider(textColor.copy(alpha = 0.6f)),
+                            fontSize = (subSize - 1).sp
+                        )
+                    )
+                }
+            }
+            
+            // Buttons: EDIT + REF
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = GlanceModifier
+                        .background(buttonBg)
+                        .cornerRadius(6.dp)
+                        .clickable(actionRunCallback<EditActionV2>())
+                ) {
+                    Text(
+                        text = "✎",
+                        style = TextStyle(
+                            color = GlanceColorProvider(textColor),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        modifier = GlanceModifier.padding(horizontal = 5.dp, vertical = 3.dp)
+                    )
+                }
+                Spacer(GlanceModifier.width(3.dp))
+                Box(
+                    modifier = GlanceModifier
+                        .background(buttonBg)
+                        .cornerRadius(6.dp)
+                        .clickable(actionRunCallback<RefreshActionV2>())
+                ) {
+                    Text(
+                        text = if (data.isRefreshing) "●" else "↻",
+                        style = TextStyle(
+                            color = GlanceColorProvider(textColor),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        modifier = GlanceModifier.padding(horizontal = 5.dp, vertical = 3.dp)
+                    )
+                }
+            }
+        }
+        
+        Spacer(GlanceModifier.height(if (isCompact) 2.dp else 4.dp))
+        
+        // Fields — filter by visible fields config AND by having a name
+        val fieldsToShow = (1..8).filter { fieldNum ->
+            val name = data.fieldNames[fieldNum]
+            val isVisible = data.visibleFields?.contains(fieldNum) ?: true
+            !name.isNullOrBlank() && isVisible
+        }
+        
+        // Limit fields if widget is compact to leave room for chart
+        val maxFields = when {
+            isTiny -> 2
+            isCompact -> 4
+            else -> 8
+        }
+        
+        fieldsToShow.take(maxFields).forEach { fieldNum ->
+            val value = when(fieldNum) {
+                1 -> data.entry?.field1
+                2 -> data.entry?.field2
+                3 -> data.entry?.field3
+                4 -> data.entry?.field4
+                5 -> data.entry?.field5
+                6 -> data.entry?.field6
+                7 -> data.entry?.field7
+                8 -> data.entry?.field8
+                else -> null
+            }
+            
+            val unit = data.fieldUnits[fieldNum] ?: ""
+            val roundedValue = if (value != null) {
+                try {
+                    val num = value.toDoubleOrNull() ?: 0.0
+                    "%.${data.chartRounding}f".format(num)
+                } catch (e: Exception) { value }
+            } else "—"
+
+            Row(
+                modifier = GlanceModifier.fillMaxWidth().padding(vertical = 0.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = data.channelName,
-                    style = TextStyle(
-                        color = androidx.glance.unit.ColorProvider(contentColor),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = (if (isSmallHeight) data.fontSize else data.fontSize + 2).sp,
-                    ),
+                    text = data.fieldNames[fieldNum] ?: "Field $fieldNum",
+                    style = TextStyle(color = GlanceColorProvider(textColor), fontSize = fieldSize.sp),
                     modifier = GlanceModifier.defaultWeight(),
                     maxLines = 1
                 )
-            } else {
-                Spacer(modifier = GlanceModifier.defaultWeight())
-            }
-
-            if (data.isRefreshing) {
-                Text(
-                    text = "•••",
-                    style = TextStyle(
-                        color = androidx.glance.unit.ColorProvider(contentColor),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    ),
-                    modifier = GlanceModifier.padding(horizontal = 4.dp)
-                )
-            }
-            
-            val buttonBg = if (isDarkBg) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.1f)
-
-            Box(
-                modifier = GlanceModifier
-                    .padding(horizontal = 2.dp)
-                    .background(buttonBg)
-                    .cornerRadius(8.dp)
-                    .clickable(actionRunCallback<RefreshAction>()),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "REF",
-                    style = TextStyle(
-                        color = androidx.glance.unit.ColorProvider(contentColor),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp,
-                    ),
-                    modifier = GlanceModifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                )
-            }
-
-            Box(
-                modifier = GlanceModifier
-                    .padding(horizontal = 2.dp)
-                    .background(buttonBg)
-                    .cornerRadius(8.dp)
-                    .clickable(androidx.glance.appwidget.action.actionRunCallback<EditAction>()),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "CFG",
-                    style = TextStyle(
-                        color = androidx.glance.unit.ColorProvider(contentColor),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp,
-                    ),
-                    modifier = GlanceModifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = GlanceModifier.height(6.dp))
-
-        if (data.entry != null) {
-            // Field list wrapped in weight to allow chart to breathe
-            Box(modifier = GlanceModifier.defaultWeight()) {
-                Column {
-                    (1..8).forEach { index ->
-                        if (data.visibleFields == null || data.visibleFields.contains(index)) {
-                            val name = data.fieldNames[index]?.takeIf { it.isNotBlank() } ?: context.getString(R.string.widget_field_name, index)
-                            val value = when(index) {
-                                1 -> data.entry.field1
-                                2 -> data.entry.field2
-                                3 -> data.entry.field3
-                                4 -> data.entry.field4
-                                5 -> data.entry.field5
-                                6 -> data.entry.field6
-                                7 -> data.entry.field7
-                                8 -> data.entry.field8
-                                else -> null
-                            }
-                            if (value != null) {
-                                FieldRow(
-                                    label = name, 
-                                    value = value, 
-                                    hasAlert = data.activeAlertFields.contains(index), 
-                                    fontSize = data.fontSize,
-                                    textColor = contentColor,
-                                    labelColor = secondaryContentColor
-                                )
-                            }
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (data.minSetFields.contains(fieldNum)) {
+                        Text(
+                            text = "▼",
+                            style = TextStyle(color = GlanceColorProvider(if (data.violatedMinFields.contains(fieldNum)) Color.Red else Color.Gray), fontSize = (fieldSize - 2).sp, fontWeight = FontWeight.Bold),
+                            modifier = GlanceModifier.padding(end = 2.dp)
+                        )
                     }
+                    if (data.maxSetFields.contains(fieldNum)) {
+                        Text(
+                            text = "▲",
+                            style = TextStyle(color = GlanceColorProvider(if (data.violatedMaxFields.contains(fieldNum)) Color.Red else Color.Gray), fontSize = (fieldSize - 2).sp, fontWeight = FontWeight.Bold),
+                            modifier = GlanceModifier.padding(end = 4.dp)
+                        )
+                    }
+                    Text(
+                        text = if (unit.isNotBlank()) "$roundedValue $unit" else roundedValue,
+                        style = TextStyle(
+                            color = GlanceColorProvider(if (data.violatedMinFields.contains(fieldNum) || data.violatedMaxFields.contains(fieldNum)) Color.Red else textColor),
+                            fontSize = fieldSize.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        maxLines = 1
+                    )
                 }
             }
-        } else {
-            Box(modifier = GlanceModifier.defaultWeight()) {
-                Text(
-                    text = context.getString(com.thingspeak.monitor.R.string.chart_empty_data),
-                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant),
-                )
-            }
         }
 
-        if (data.entry != null && data.chartBitmap != null) {
-            android.util.Log.d("AUDIT_V11", "SmallWidget [UI_CHART] rendering bitmap: ${data.chartBitmap.width}x${data.chartBitmap.height}")
-            Spacer(modifier = GlanceModifier.height(8.dp))
-            androidx.glance.Image(
-                provider = androidx.glance.ImageProvider(data.chartBitmap),
-                contentDescription = context.getString(R.string.widget_content_chart),
-                modifier = GlanceModifier.fillMaxWidth().height(84.dp),
-                contentScale = androidx.glance.layout.ContentScale.FillBounds
-            )
-        }
-
-        val timestampText = data.entry?.let { WidgetUtils.formatRelativeTime(context, it.createdAt) } ?: "—"
-        val localSyncText = if (data.lastSyncTime > 0) WidgetUtils.formatTime(context, data.lastSyncTime) else "—"
-
-        Row(
-            modifier = GlanceModifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = GlanceModifier.defaultWeight()) {
-                Text(
-                    text = "Data from: $timestampText",
-                    style = TextStyle(
-                        color = androidx.glance.unit.ColorProvider(secondaryContentColor),
-                        fontSize = 11.sp,
-                    ),
-                )
-                Text(
-                    text = "Synced: $localSyncText",
-                    style = TextStyle(
-                        color = androidx.glance.unit.ColorProvider(secondaryContentColor),
-                        fontSize = 10.sp,
-                    ),
-                )
-            }
-            if (isStale) {
-                Text(
-                    text = context.getString(R.string.widget_status_stale),
-                    style = TextStyle(
-                        color = GlanceTheme.colors.error,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    ),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun FieldRow(
-    label: String, 
-    value: String?, 
-    hasAlert: Boolean, 
-    fontSize: Int,
-    textColor: Color,
-    labelColor: Color
-) {
-    val size = LocalSize.current
-    val isNarrow = size.width.value < 120f
-
-    Row(
-        modifier = GlanceModifier.fillMaxWidth().padding(vertical = 1.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = TextStyle(
-                color = androidx.glance.unit.ColorProvider(labelColor),
-                fontSize = fontSize.sp,
-            ),
-            modifier = GlanceModifier.defaultWeight(),
-            maxLines = 1
-        )
-        Text(
-            text = value ?: "—",
-            style = TextStyle(
-                color = if (hasAlert) androidx.glance.unit.ColorProvider(Color.Red) 
-                        else androidx.glance.unit.ColorProvider(textColor),
-                fontWeight = FontWeight.Bold,
-                fontSize = (if (isNarrow) fontSize else fontSize + 2).sp,
-            ),
-            modifier = if (isNarrow) GlanceModifier.padding(start = 4.dp) else GlanceModifier.defaultWeight(),
-            maxLines = 1
-        )
-        if (hasAlert) {
-            Spacer(modifier = GlanceModifier.width(4.dp))
-            Box(modifier = GlanceModifier.width(14.dp).height(14.dp)) {
-                androidx.glance.Image(
-                    provider = androidx.glance.ImageProvider(com.thingspeak.monitor.R.drawable.ic_notification_bell),
-                    contentDescription = "Alert active",
+        // Chart Section — fills remaining space
+        if (data.chartBitmap != null && !isTiny) {
+            Spacer(GlanceModifier.height(4.dp))
+            Box(
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .defaultWeight()
+                    .background(if (isDarkBg) Color.White.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.05f))
+                    .cornerRadius(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    provider = ImageProvider(data.chartBitmap),
+                    contentDescription = "Live Chart",
                     modifier = GlanceModifier.fillMaxSize(),
-                    colorFilter = androidx.glance.ColorFilter.tint(androidx.glance.unit.ColorProvider(Color.Red))
+                    contentScale = ContentScale.Fit
                 )
             }
         }
@@ -456,4 +286,45 @@ private fun isColorDark(color: Int): Boolean {
                        0.114 * android.graphics.Color.blue(color)) / 255
     return darkness >= 0.5
 }
+
+class RefreshActionV2 : androidx.glance.appwidget.action.ActionCallback {
+    override suspend fun onAction(
+        context: android.content.Context,
+        glanceId: androidx.glance.GlanceId,
+        parameters: androidx.glance.action.ActionParameters
+    ) {
+        val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
+        val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext, com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java)
+        val bindingRepo = entryPoint.widgetBindingRepository()
+        val channelId = bindingRepo.getBindingSync(appWidgetId)
+        
+        if (channelId != -1L) {
+            val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.thingspeak.monitor.core.worker.DataSyncWorker>().build()
+            androidx.work.WorkManager.getInstance(context)
+                .enqueueUniqueWork(
+                    "glance_refresh_sync_$appWidgetId",
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    workRequest
+                )
+        }
+    }
+}
+
+class EditActionV2 : androidx.glance.appwidget.action.ActionCallback {
+    override suspend fun onAction(
+        context: android.content.Context,
+        glanceId: androidx.glance.GlanceId,
+        parameters: androidx.glance.action.ActionParameters
+    ) {
+        val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
+        val intent = android.content.Intent(context, WidgetConfigActivity::class.java).apply {
+            putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        context.startActivity(intent)
+    }
+}
+
+private val Int.sp get() = androidx.compose.ui.unit.TextUnit(this.toFloat(), androidx.compose.ui.unit.TextUnitType.Sp)
+private val Int.dp get() = androidx.compose.ui.unit.Dp(this.toFloat())
 

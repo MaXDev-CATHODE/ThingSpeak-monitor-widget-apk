@@ -7,42 +7,40 @@ import java.time.format.DateTimeFormatter
 
 /**
  * Formatter for X-Axis to display dates instead of raw Float values.
- * Dynamically adjusts the time format based on the visible zoom level:
- * - Zoomed out (>2 days): "MMM dd"
- * - Normal daily view: "HH:mm"
- * - Zoomed in (<1h visible): "HH:mm:ss"
+ * Standardized for Epoch-offset (Delta Seconds) input (Agent 3.7.5).
  */
 class DateAxisFormatter(
     var isDailyResource: Boolean = true,
     var baselineX: Long = 0L,
-    var timeScale: Float = 1f,
-    var chart: com.github.mikephil.charting.charts.LineChart? = null
+    var timeScale: Float = 1f, // Standardized to 1.0f (seconds)
+    var chart: com.github.mikephil.charting.charts.BarLineChartBase<*>? = null,
+    var sampleTimestamps: List<Long> = emptyList() 
 ) : ValueFormatter() {
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
     private val timeSecondsFormatter = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
-    private val dateFormatter = DateTimeFormatter.ofPattern("MMM dd").withZone(ZoneId.systemDefault())
-    private val dateTimeFormatter = DateTimeFormatter.ofPattern("MMM dd HH:mm").withZone(ZoneId.systemDefault())
+    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM").withZone(ZoneId.systemDefault())
+    private val dateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault())
 
-    // Cache to prevent GC thrashing and CPU overload during pan/zoom
+    // Cache to prevent GC thrashing
     private val formatCache = android.util.LruCache<Long, String>(250)
     private var lastFormatMode: Int = -1
 
     override fun getFormattedValue(value: Float): String {
         return try {
-            val seconds = (value * timeScale).toLong() + baselineX
+            // SYSTEM X = TIME DELTA (Agent 3.7.1 Absolute Fix)
+            val seconds = value.toLong() + baselineX
             
-            // Determine visible range in seconds
-            val visibleSeconds = chart?.let { it.visibleXRange * timeScale } ?: Float.MAX_VALUE
+            // Determine visible range in seconds to choose format
+            val visibleSeconds = chart?.let { (it.visibleXRange).toLong() } 
+                ?: if (isDailyResource) 86400L else 7 * 86400L
             
-            // Choose format mode based on zoom level
             val formatMode = when {
-                visibleSeconds <= 1800  -> 0       // <30min: show HH:mm:ss
-                visibleSeconds <= 2 * 86400 -> 1   // <2d: show HH:mm
-                visibleSeconds <= 7 * 86400 -> 3   // <7d: show "MMM dd HH:mm"
-                else -> 2                          // >7d: show "MMM dd"
+                visibleSeconds <= 300       -> 0   // <5min: show HH:mm:ss
+                visibleSeconds <= 86400     -> 1   // <24h: show HH:mm
+                visibleSeconds <= 3 * 86400 -> 3   // <3d: show dd.MM HH:mm
+                else                        -> 2   // >3d: show dd.MM
             }
 
-            // Clear cache if format mode changed
             if (lastFormatMode != formatMode) {
                 formatCache.evictAll()
                 lastFormatMode = formatMode
@@ -52,12 +50,11 @@ class DateAxisFormatter(
             if (cachedValue != null) return cachedValue
 
             val instant = Instant.ofEpochSecond(seconds)
-            
             val result = when (formatMode) {
-                0 -> timeSecondsFormatter.format(instant)     // HH:mm:ss
-                1 -> timeFormatter.format(instant)            // HH:mm
-                2 -> dateFormatter.format(instant)            // MMM dd
-                3 -> dateTimeFormatter.format(instant)        // MMM dd HH:mm
+                0 -> timeSecondsFormatter.format(instant)
+                1 -> timeFormatter.format(instant)
+                2 -> dateFormatter.format(instant)
+                3 -> dateTimeFormatter.format(instant)
                 else -> timeFormatter.format(instant)
             }
             

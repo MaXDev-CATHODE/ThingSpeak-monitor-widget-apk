@@ -44,9 +44,9 @@ object NetworkModule {
         dynamicUrlInterceptor: com.thingspeak.monitor.core.network.DynamicUrlInterceptor
     ): OkHttpClient {
         return OkHttpClient.Builder()
-            .connectTimeout(60, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
             .addInterceptor(dynamicUrlInterceptor)
             .addInterceptor(com.thingspeak.monitor.core.network.ThingSpeakErrorInterceptor())
             .addInterceptor(SecurityInterceptor())

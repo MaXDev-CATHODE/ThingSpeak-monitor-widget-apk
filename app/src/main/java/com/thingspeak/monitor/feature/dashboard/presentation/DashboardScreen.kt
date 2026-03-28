@@ -59,11 +59,16 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    
+    androidx.compose.runtime.SideEffect {
+        android.util.Log.e("DashboardScreen", "RECOMPOSE: isLoading=${uiState.isLoading}, channels=${uiState.channels.size}")
+    }
+    
     val snackbarHostState = remember { SnackbarHostState() }
     
     var showAddDialog by remember { mutableStateOf(false) }
     var channelToDelete by remember { mutableStateOf<Long?>(null) }
-    var channelToEdit by remember { mutableStateOf<com.thingspeak.monitor.core.datastore.ChannelPreferences.SavedChannel?>(null) }
+    var channelToEdit by remember { mutableStateOf<com.thingspeak.monitor.core.datastore.SavedChannel?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
@@ -115,8 +120,11 @@ fun DashboardScreen(
         EditChannelDialog(
             channel = channel,
             onDismiss = { channelToEdit = null },
-            onConfirm = { id, name, apiKey ->
-                viewModel.updateChannel(id, name, apiKey)
+            onConfirm = { id, name, apiKey, chartType, chartResults, chartColor, chartBgColor, fieldColors, fieldYMin, fieldYMax, textColor, visibleFields, widgetBgColorHex ->
+                viewModel.updateChannel(
+                    id, name, apiKey, chartType, chartResults, 
+                    chartColor, chartBgColor, fieldColors, fieldYMin, fieldYMax, textColor, visibleFields, widgetBgColorHex
+                )
                 channelToEdit = null
             }
         )
@@ -176,7 +184,10 @@ fun DashboardScreen(
             }
             androidx.compose.material3.pulltorefresh.PullToRefreshBox(
                 isRefreshing = uiState.isLoading,
-                onRefresh = viewModel::refreshAll,
+                onRefresh = { 
+                    android.util.Log.e("DashboardScreen", "onRefresh CALLED")
+                    viewModel.refreshAll() 
+                },
                 modifier = Modifier.weight(1f)
             ) {
                 DashboardContent(

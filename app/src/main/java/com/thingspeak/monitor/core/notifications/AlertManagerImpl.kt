@@ -118,6 +118,76 @@ class AlertManagerImpl @Inject constructor(
         }
     }
 
+    override fun fireRuleAlert(channelId: Long, violations: List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>, fieldNames: Map<Int, String>) {
+        android.util.Log.d("AlertManager", "fireRuleAlert called for channel $channelId with ${violations.size} violations")
+        
+        if (!hasPostNotificationsPermission()) {
+            android.util.Log.w("AlertManager", "MISSING POST_NOTIFICATIONS PERMISSION!")
+            return
+        }
+
+        if (violations.isEmpty()) return
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra("channel_id", channelId)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            channelId.toInt() + 1000,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val inboxStyle = NotificationCompat.InboxStyle()
+        violations.forEach { violation ->
+            val fieldLabel = fieldNames[violation.fieldNumber] ?: "Field ${violation.fieldNumber}"
+            val conditionLabel = when(violation.condition) {
+                "GREATER_THAN" -> ">"
+                "LESS_THAN" -> "<"
+                else -> "="
+            }
+            val content = "$fieldLabel $conditionLabel ${violation.thresholdValue}"
+            inboxStyle.addLine(content)
+        }
+
+        val title = context.getString(R.string.notification_alert_title, channelId.toString())
+
+        val notification = NotificationCompat.Builder(context, ALERTS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_bell)
+            .setContentTitle(title)
+            .setContentText("Detected ${violations.size} threshold violations")
+            .setStyle(inboxStyle)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setContentIntent(pendingIntent)
+            .setGroup(GROUP_KEY_THINGSPEAK_ALERTS)
+            .setAutoCancel(true)
+            .setDefaults(Notification.DEFAULT_ALL)
+            .build()
+
+        val summaryNotification = NotificationCompat.Builder(context, ALERTS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_bell)
+            .setStyle(NotificationCompat.InboxStyle()
+                .setSummaryText("ThingSpeak Alerts"))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setGroup(GROUP_KEY_THINGSPEAK_ALERTS)
+            .setGroupSummary(true)
+            .setAutoCancel(true)
+            .build()
+
+        val signatureString = violations.joinToString("|") { "${it.fieldNumber}:${it.condition}:${it.thresholdValue}" }
+        val notificationId = (channelId.hashCode() * 37 + signatureString.hashCode())
+
+        try {
+            notificationManager.notify(notificationId, notification)
+            notificationManager.notify(SUMMARY_ID, summaryNotification)
+        } catch (e: Exception) {
+            android.util.Log.e("AlertManager", "Failed to post notification", e)
+        }
+    }
+
     private fun hasPostNotificationsPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ActivityCompat.checkSelfPermission(

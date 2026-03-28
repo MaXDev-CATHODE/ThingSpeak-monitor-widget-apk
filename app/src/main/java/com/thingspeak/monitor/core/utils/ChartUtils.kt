@@ -53,4 +53,32 @@ object ChartUtils {
         sampled.add(data[size - 1])
         return sampled.distinctBy { it.x }.sortedBy { it.x }
     }
+
+    /**
+     * Reduces the list of entries to exactly [threshold] points by averaging them in buckets.
+     * Best for Bar charts where we want a fixed number of bars.
+     */
+    fun bucketAverage(data: List<Entry>, threshold: Int): List<Entry> {
+        if (data.size <= threshold || threshold < 1) return data
+        
+        val result = mutableListOf<Entry>()
+        val bucketSize = data.size.toDouble() / threshold
+        
+        val startX = data.first().x
+        val endX = data.last().x
+        val step = if (threshold > 1) (endX - startX) / (threshold - 1) else 0f
+        
+        for (i in 0 until threshold) {
+            val start = (i * bucketSize).toInt()
+            val end = ((i + 1) * bucketSize).toInt().coerceAtMost(data.size)
+            
+            if (start < end) {
+                val bucket = data.subList(start, end)
+                val x = startX + i * step
+                val avgY = bucket.map { it.y }.average().toFloat()
+                result.add(Entry(x, avgY))
+            }
+        }
+        return result
+    }
 }

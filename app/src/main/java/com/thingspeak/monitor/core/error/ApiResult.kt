@@ -50,7 +50,7 @@ suspend fun <T> safeApiCall(block: suspend () -> T): ApiResult<T> {
             cause = e,
         )
     } catch (e: java.io.IOException) {
-        val message = "Network error: Verifiy your connection"
+        val message = "Network error: Verify your connection"
         android.util.Log.e("ApiResult", message, e)
         ApiResult.Error(
             code = -1, // Custom code for I/O

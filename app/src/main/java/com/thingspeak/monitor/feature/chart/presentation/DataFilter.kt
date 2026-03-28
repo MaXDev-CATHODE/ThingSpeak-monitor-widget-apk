@@ -4,9 +4,8 @@ package com.thingspeak.monitor.feature.chart.presentation
  * Data processing filters for charts, modeled after ThingView.
  */
 enum class DataFilter {
-    NONE,
+    RAW,
+    AVG,
     MEDIAN,
-    MEAN,
-    ROUND,
     SUM
 }

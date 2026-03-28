@@ -15,8 +15,12 @@ interface ThingSpeakApiService {
     @GET("channels/{channelId}/feeds.json")
     suspend fun getChannelFeed(
         @Path("channelId") channelId: Long,
-        @Query("results") results: Int = 100,
+        @Query("results") results: Int? = null,
         @Query("api_key") apiKey: String? = null,
+        @Query("days") days: Int? = null,
+        @Query("average") average: Int? = null,
+        @Query("start") start: String? = null,
+        @Query("end") end: String? = null,
     ): Response<ChannelFeedResponse>
 
     @GET("channels/{channelId}/feeds/last.json")

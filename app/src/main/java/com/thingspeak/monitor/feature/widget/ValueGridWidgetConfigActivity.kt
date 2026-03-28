@@ -23,9 +23,11 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
+import com.thingspeak.monitor.core.datastore.SavedChannel
 import com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme
 import com.thingspeak.monitor.core.worker.DataSyncWorker
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -80,8 +82,32 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val savedChannels by channelPreferences.observe().collectAsState(initial = emptyList())
-                    val coroutineScope = rememberCoroutineScope()
                     var isSaving by remember { mutableStateOf(false) }
+                    val coroutineScope = rememberCoroutineScope()
+                    
+                    var initialPrefs by remember { mutableStateOf<androidx.datastore.preferences.core.Preferences?>(null) }
+                    LaunchedEffect(appWidgetId) {
+                        val gId = findGlanceId(appWidgetId)
+                        if (gId != null) {
+                            initialPrefs = androidx.glance.appwidget.state.getAppWidgetState<androidx.datastore.preferences.core.Preferences>(this@ValueGridWidgetConfigActivity, WidgetPreferencesStateDefinition, gId)
+                        }
+                    }
+
+                    val savedChannelId = initialPrefs?.get(longPreferencesKey("channel_id"))
+                    val savedBgColor = initialPrefs?.get(stringPreferencesKey("bg_color"))
+                    val savedTextColor = initialPrefs?.get(stringPreferencesKey("text_color"))
+                    val savedTransparency = initialPrefs?.get(floatPreferencesKey("transparency"))
+                    val savedFontSize = initialPrefs?.get(intPreferencesKey("font_size"))
+                    val savedIsGlass = initialPrefs?.get(booleanPreferencesKey("is_glass"))
+                    val savedVisibleFields = initialPrefs?.get(stringSetPreferencesKey("visible_fields"))?.mapNotNull { it.toIntOrNull() }?.toSet()
+                    
+                    val existing = savedChannelId?.let { idVal -> savedChannels.find { it.id == idVal } }
+
+                    val initialAlertRules by if (savedChannelId != null) {
+                        repository.observeAlertRules(savedChannelId, null).collectAsState(initial = emptyList())
+                    } else {
+                        remember { mutableStateOf(emptyList<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>()) }
+                    }
 
                     // We will reuse WidgetConfigScreen but probably modify it later to hide Chart Selection totally
                     // or just use it as is since Chart Selection was removed for now
@@ -92,42 +118,70 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                         onRefreshRequest = { channelId, key ->
                             coroutineScope.launch {
                                 try {
-                                    repository.refreshFeed(channelId, key)
+                                    val ch = savedChannels.find { it.id == channelId }
+                                    repository.refreshFeed(channelId, key, chartTimespan = ch?.chartTimespan)
                                 } catch (e: Exception) {
                                     android.util.Log.e("ValueGridWidgetConfig", "Failed to refresh metadata for $channelId", e)
                                 }
                             }
                         },
-                        onSave = { channelId, apiKey, name, bgColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan ->
+                        initialChannelId = existing?.id,
+                        initialApiKey = existing?.apiKey,
+                        initialChannelName = existing?.name,
+                        initialBgColorHex = savedBgColor ?: existing?.widgetBgColorHex,
+                        initialTransparency = savedTransparency ?: existing?.widgetTransparency ?: 1.0f,
+                        initialIsGlass = savedIsGlass ?: existing?.isGlassmorphismEnabled,
+                        initialChartTimespan = existing?.chartProcessingPeriod,
+                        initialChartTimespanStr = existing?.chartTimespan,
+                        initialChartResults = existing?.chartResults ?: 60,
+                        initialFontSize = savedFontSize ?: existing?.widgetFontSize ?: 12,
+                        initialTextColorHex = savedTextColor ?: existing?.widgetTextColorHex,
+                        initialVisibleFields = savedVisibleFields ?: existing?.widgetVisibleFields ?: emptySet(),
+                        initialAlertRules = initialAlertRules,
+                        onSave = { channelId, apiKey, name, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResultsCount, alertRules ->
                             isSaving = true
                             coroutineScope.launch {
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                                     try {
                                         android.util.Log.d("SNIPER_V5", "onSave triggered for channel $channelId, widget $appWidgetId")
 
-                                        // 1. Save Channel Preferences
-                                        val existingChannel = savedChannels.find { it.id == channelId }
-                                        val updatedChannel = (existingChannel ?: ChannelPreferences.SavedChannel(id = channelId, name = name)).copy(
-                                            apiKey = apiKey.takeIf { it.isNotBlank() },
+                                        // 1. Update Core Channel Info (API Key, Name Only)
+                                        val existingChannel = channelPreferences.observe().first().find { it.id == channelId }
+                                        val updatedChannel = (existingChannel ?: SavedChannel(id = channelId, name = name)).copy(
+                                            id = channelId,
                                             name = name,
-                                            widgetBgColorHex = bgColor,
-                                            widgetTransparency = transparency,
-                                            widgetFontSize = fontSize,
-                                            widgetVisibleFields = visibleFields,
-                                            isGlassmorphismEnabled = isGlass,
-                                            chartField = chartField,
-                                            chartProcessingPeriod = chartTimespan
+                                            apiKey = apiKey,
+                                            lastSyncStatus = "NONE",
+                                            lastSyncTime = System.currentTimeMillis()
                                         )
                                         channelPreferences.save(updatedChannel)
-                                        android.util.Log.d("NUCLEAR_V8", "1. Channel prefs saved for $channelId")
+                                        android.util.Log.d("NUCLEAR_V8", "1. Core Channel info saved for $channelId (Visuals skipped for isolation)")
 
-                                        // 2. CRITICAL SYNC BINDING (NUCLEAR V8)
+                                        // 2. Alert Rules saving (Unified - Global per channel)
+                                        repository.deleteGlobalAlertRules(channelId)
+                                        
+                                        // Save new rules
+                                        alertRules.forEach { rule ->
+                                            repository.saveAlertRule(rule.copy(appWidgetId = null))
+                                        }
+                                        android.util.Log.d("NUCLEAR_V8", "Unified Alarms: Saved ${alertRules.size} rules for channel $channelId")
+
+                                        // 3. CRITICAL SYNC BINDING (NUCLEAR V8)
                                         // We WAIT for this to finish before allowing the activity to close.
                                         // This ensures the widget will see the binding when it refreshes.
                                         widgetBindingRepository.saveBinding(appWidgetId, channelId)
-                                        android.util.Log.d("NUCLEAR_V8", "2. Binding DB saved synchronicly: $appWidgetId -> $channelId")
+                                        android.util.Log.d("NUCLEAR_V8", "3. Binding DB saved synchronicly: $appWidgetId -> $channelId")
 
-                                        // 3. Launch heavy/async background tasks
+                                        // Sync with Room DB for app UI consistency (Core Info Only)
+                                        repository.observeChannel(channelId).first()?.let { roomChannel ->
+                                            repository.updateChannel(roomChannel.copy(
+                                                name = name,
+                                                apiKey = apiKey
+                                                // Skipping visual fields to maintain isolation (Agent 2.1 Fix)
+                                            ))
+                                        }
+
+                                        // 4. Launch heavy/async background tasks
                                         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
                                         val appContext = applicationContext
                                         kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
@@ -143,12 +197,14 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                             this[stringPreferencesKey("api_key")] = apiKey ?: ""
                                                             this[stringPreferencesKey("channel_name")] = name
                                                             this[stringPreferencesKey("bg_color")] = bgColor ?: "#FFFFFF"
+                                                            this[stringPreferencesKey("text_color")] = txtColor ?: ""
                                                             this[floatPreferencesKey("transparency")] = transparency
                                                             this[intPreferencesKey("font_size")] = fontSize
                                                             this[stringSetPreferencesKey("visible_fields")] = visibleFields.map { it.toString() }.toSet()
                                                             this[intPreferencesKey("chart_field")] = chartField
                                                             this[booleanPreferencesKey("is_glass")] = isGlass
                                                             this[intPreferencesKey("chart_timespan")] = chartTimespan
+                                                            this[intPreferencesKey("chart_results")] = chResultsCount
                                                             this[booleanPreferencesKey("is_refreshing")] = true
                                                         }
                                                     }
@@ -166,7 +222,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                 android.util.Log.d("NUCLEAR_V8", "Async: System signals sent.")
 
                                                 // Background Refresh
-                                                repository.refreshFeed(channelId, apiKey)
+                                                repository.refreshFeed(channelId, apiKey, chartTimespan = chartTimespanStr)
                                                 com.thingspeak.monitor.core.worker.DataSyncWorker.runOnce(appContext)
                                                 android.util.Log.e("NUCLEAR_V8", "Async: Worker enqueued.")
                                             } catch (e: Exception) {

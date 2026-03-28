@@ -24,6 +24,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.foundation.isSystemInDarkTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Main application activity — UI entry point.
@@ -60,10 +62,12 @@ class MainActivity : ComponentActivity() {
 
                     androidx.compose.runtime.LaunchedEffect(isWorkerScheduled) {
                         if (!isWorkerScheduled) {
-                            val context = this@MainActivity
-                            val interval = appPreferences.observeSyncInterval().first()
-                            com.thingspeak.monitor.core.worker.DataSyncWorker.schedule(context, interval)
-                            appPreferences.setIsWorkerScheduled(true)
+                            withContext(Dispatchers.IO) {
+                                val context = this@MainActivity
+                                val interval = appPreferences.observeSyncInterval().first()
+                                com.thingspeak.monitor.core.worker.DataSyncWorker.schedule(context, interval)
+                                appPreferences.setIsWorkerScheduled(true)
+                            }
                         }
                     }
 

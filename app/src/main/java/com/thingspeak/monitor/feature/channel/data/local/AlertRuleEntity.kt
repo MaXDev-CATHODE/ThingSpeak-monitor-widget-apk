@@ -11,6 +11,7 @@ data class AlertRuleEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val channelId: Long,
+    val appWidgetId: Int? = null, // NULL = Global channel rule, non-null = Widget-specific
     val fieldNumber: Int, // 1..8
     val condition: String, // "GREATER_THAN", "LESS_THAN"
     val thresholdValue: Double,

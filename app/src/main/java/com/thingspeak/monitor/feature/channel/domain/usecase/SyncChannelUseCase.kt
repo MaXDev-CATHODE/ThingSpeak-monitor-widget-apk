@@ -1,27 +1,32 @@
 package com.thingspeak.monitor.feature.channel.domain.usecase
 
+import android.util.Log
 import com.thingspeak.monitor.core.di.IoDispatcher
 import com.thingspeak.monitor.core.notifications.AlertManager
 import com.thingspeak.monitor.feature.alert.domain.model.FiredAlert
 import com.thingspeak.monitor.feature.channel.domain.model.*
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
-import com.thingspeak.monitor.feature.channel.domain.usecase.CheckAlertThresholdsUseCase
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
  * Orchestrates channel synchronization, alert evaluation, and notification triggering.
+ * Unified logic (Agent 3.2) for both Periodic Worker and High Frequency Service.
  */
 class SyncChannelUseCase @Inject constructor(
     private val repository: ChannelRepository,
-    private val checkThresholds: CheckAlertThresholdsUseCase,
+    private val checkAlertRules: CheckAlertRulesUseCase,
     private val alertManager: AlertManager,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
     data class Result(
+        val channel: Channel,
+        val latestEntry: FeedEntry,
+        val allViolations: List<AlertRule>,
+        val channelRules: List<AlertRule>,
         val hasNewData: Boolean,
         val alertStateChanged: Boolean,
         val error: Throwable? = null
@@ -30,122 +35,96 @@ class SyncChannelUseCase @Inject constructor(
     suspend operator fun invoke(channel: Channel): Result = withContext(ioDispatcher) {
         try {
             // 1. Refresh data from API
-            val timespanHours = channel.chartProcessingPeriod.takeIf { it > 0 } ?: 24
-            val resultsCount = (timespanHours * 60).coerceAtMost(500)
-            repository.refreshFeed(channel.id, channel.apiKey, resultsCount)
+            val resultsCount = (channel.chartProcessingPeriod.takeIf { it > 0 } ?: 24) * 60
+            val maxResults = resultsCount.coerceAtMost(500)
+            
+            try {
+                repository.refreshFeed(channel.id, channel.apiKey, maxResults)
+            } catch (e: Exception) {
+                Log.w("TS_DEBUG", "SyncChannelUseCase: Refresh failed for ${channel.id}, using cache: ${e.message}")
+            }
 
-            // 2. Load latest data and check for updates
-            val entries = repository.observeFeed(channel.id).first()
-            if (entries.isEmpty()) return@withContext Result(false, false)
-
-            val latestEntry = entries.first()
+            // 2. Load latest data
+            val entries = repository.observeFeed(channel.id).firstOrNull() ?: emptyList()
+            val latestEntry = entries.firstOrNull() ?: FeedEntry(0L, "—", emptyMap())
+            
             val lastProcessedId = channel.lastProcessedEntryId
+            val newEntries = entries.filter { it.entryId > lastProcessedId }
             
-            // Find entries that haven't been processed for alerts yet
-            val newEntries = entries.filter { it.entryId > lastProcessedId }.reversed() // Oldest first
+            // 3. Load UNIFIED global rules (appWidgetId = null)
+            val channelRules = repository.getAlertRules(channel.id, null)
             
-            // If no new entries, we still check the latest one to allow alert persistence/clearing
-            val entriesToCheck = if (newEntries.isNotEmpty()) newEntries else listOf(latestEntry)
-
-            // 3. Load alert thresholds and advanced rules
-            val thresholds = repository.getAlertsForChannel(channel.id).filter { it.isEnabled }
-            val advancedRules = repository.getAlertRulesForChannel(channel.id).filter { it.isEnabled }
+            // 4. Check ALL current violations (for visual indicators ▲/▼)
+            val allViolations = checkAlertRules(latestEntry, channelRules)
             
-            val allFieldNumbers = (thresholds.map { it.fieldNumber } + advancedRules.map { it.fieldNumber }).distinct()
-            val violationsToNotify = mutableListOf<AlertThreshold>()
             var anyAlertStateChanged = false
-
-            // 4. Process each field for violations
-            allFieldNumbers.forEach { fieldNum ->
-                val fieldThresholds = thresholds.filter { it.fieldNumber == fieldNum }
-                val fieldRules = advancedRules.filter { it.fieldNumber == fieldNum }
-
-                // Use the latest entry that has data for this field
-                val latestEntryForField = entries.firstOrNull { it.fields[fieldNum] != null } ?: latestEntry
-                val fieldValue = latestEntryForField.fields[fieldNum]?.toDoubleOrNull()
+            val newViolationsToNotify = mutableListOf<AlertRule>()
+            
+            // 5. DEBOUNCING LOGIC: manage state per field
+            val fieldsWithRules = channelRules.map { it.fieldNumber }.toSet()
+            
+            fieldsWithRules.forEach { fieldNum ->
+                val currentFieldViolations = allViolations.filter { it.fieldNumber == fieldNum }
+                // Unified signature format: condition:threshold|...
+                val currentSignature = if (currentFieldViolations.isEmpty()) "" 
+                    else currentFieldViolations.sortedBy { "${it.condition}:${it.thresholdValue}" }
+                                             .joinToString("|") { "${it.condition}:${it.thresholdValue}" }
                 
-                // Stale data heuristic: skip evaluation if the field hasn't updated in 5 entry cycles
-                val entryAge = latestEntry.entryId - latestEntryForField.entryId
-                val isStale = entryAge > 5
-
-                if (isStale) {
-                    val fired = repository.getFiredAlert(channel.id, fieldNum)
-                    if (fired != null) {
-                        repository.deleteFiredAlert(channel.id, fieldNum)
-                        anyAlertStateChanged = true
-                    }
-                    return@forEach
-                }
-
-                val currentViolations = mutableSetOf<AlertThreshold>()
+                val firedAlert = repository.getFiredAlert(channel.id, fieldNum)
                 
-                // Evaluate legacy thresholds
-                if (fieldThresholds.isNotEmpty()) {
-                    currentViolations.addAll(checkThresholds(latestEntryForField, fieldThresholds))
-                }
-
-                // Evaluate advanced rules
-                fieldRules.forEach { rule ->
-                    val value = latestEntryForField.fields[rule.fieldNumber]?.toDoubleOrNull()
-                    if (value != null) {
-                        val isViolated = when (rule.condition) {
-                            "GREATER_THAN" -> value > rule.thresholdValue
-                            "LESS_THAN" -> value < rule.thresholdValue
-                            else -> false
-                        }
-                        if (isViolated) {
-                            currentViolations.add(AlertThreshold(
-                                channelId = channel.id,
-                                fieldNumber = rule.fieldNumber,
-                                fieldName = channel.fieldNames[rule.fieldNumber] ?: "Field ${rule.fieldNumber}",
-                                minValue = if (rule.condition == "LESS_THAN") rule.thresholdValue else null,
-                                maxValue = if (rule.condition == "GREATER_THAN") rule.thresholdValue else null
-                            ))
-                        }
-                    }
-                }
-
-                val fired = repository.getFiredAlert(channel.id, fieldNum)
-                val currentSignature = currentViolations
-                    .sortedBy { "${it.minValue}:${it.maxValue}" }
-                    .joinToString("|") { "${it.minValue}:${it.maxValue}" }
-
-                if (currentViolations.isNotEmpty()) {
-                    if (fired == null || fired.violationSignature != currentSignature) {
-                        violationsToNotify.addAll(currentViolations)
+                if (currentSignature.isNotEmpty()) {
+                    if (firedAlert == null || firedAlert.violationSignature != currentSignature) {
+                        Log.i("TS_DEBUG", "SyncChannelUseCase: NEW ALARM for channel ${channel.id}, field $fieldNum: $currentSignature")
+                        newViolationsToNotify.addAll(currentFieldViolations)
                         repository.saveFiredAlert(FiredAlert(
                             channelId = channel.id,
                             fieldNumber = fieldNum,
                             lastFiredEntryId = latestEntry.entryId,
-                            lastFiredTimestamp = System.currentTimeMillis(),
+                            timestamp = System.currentTimeMillis(),
                             violationSignature = currentSignature
                         ))
                         anyAlertStateChanged = true
+                    } else {
+                        Log.v("TS_DEBUG", "SyncChannelUseCase: Alarm for field $fieldNum debounced.")
                     }
-                } else if (fired != null) {
+                } else if (firedAlert != null) {
+                    Log.i("TS_DEBUG", "SyncChannelUseCase: Alarm for field $fieldNum CLEARED for channel ${channel.id}")
                     repository.deleteFiredAlert(channel.id, fieldNum)
                     anyAlertStateChanged = true
                 }
             }
 
-            // 5. Fire notifications
-            if (violationsToNotify.isNotEmpty()) {
-                alertManager.fireAlert(channel.id, violationsToNotify)
+            // 6. Fire system notification (sound/vibrate) only if new violations detected
+            if (newViolationsToNotify.isNotEmpty()) {
+                alertManager.fireRuleAlert(channel.id, newViolationsToNotify, channel.fieldNames)
             }
 
-            // 6. Update processing state
+            // 7. Update processing state
+            var updatedChannel = channel
             if (newEntries.isNotEmpty()) {
-                repository.updateChannel(channel.copy(
-                    lastProcessedEntryId = newEntries.last().entryId
-                ))
+                updatedChannel = channel.copy(lastProcessedEntryId = latestEntry.entryId)
+                repository.updateChannel(updatedChannel)
             }
 
             Result(
+                channel = updatedChannel,
+                latestEntry = latestEntry,
+                allViolations = allViolations,
+                channelRules = channelRules,
                 hasNewData = newEntries.isNotEmpty(),
                 alertStateChanged = anyAlertStateChanged
             )
         } catch (e: Exception) {
-            Result(false, false, e)
+            Log.e("TS_DEBUG", "SyncChannelUseCase: CRITICAL ERROR for ${channel.id}", e)
+            Result(
+                channel = channel,
+                latestEntry = FeedEntry(0L, "—", emptyMap()),
+                allViolations = emptyList(),
+                channelRules = emptyList(),
+                hasNewData = false,
+                alertStateChanged = false,
+                error = e
+            )
         }
     }
 }
