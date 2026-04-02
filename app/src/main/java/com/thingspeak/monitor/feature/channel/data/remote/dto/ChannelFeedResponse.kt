@@ -29,6 +29,7 @@ data class ChannelDto(
     val field6: String? = null,
     val field7: String? = null,
     val field8: String? = null,
+    val timezone: String? = null,
 )
 
 @Serializable

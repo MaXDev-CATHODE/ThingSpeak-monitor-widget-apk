@@ -78,9 +78,9 @@ fun ValueGridContent(context: Context, data: WidgetData) {
                     }
                 }
                 if (data.entry != null) {
-                    val relativeTime = WidgetUtils.formatRelativeTime(context, data.entry.createdAt)
+                    val timeStr = WidgetUtils.formatTime(data.entry.createdAt, data.channelTimezone)
                     Text(
-                        text = "Sync: $relativeTime",
+                        text = "Measured: $timeStr",
                         style = TextStyle(
                             color = ColorProvider(contentColorVal.copy(alpha = 0.6f)),
                             fontSize = (if (isSmallHeight) 8 else 9).sp

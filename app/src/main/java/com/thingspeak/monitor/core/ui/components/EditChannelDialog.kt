@@ -180,8 +180,7 @@ fun EditChannelDialog(
                 // Per-field configuration
                 for (i in 1..8) {
                     val fieldName = channel.fieldNames[i]
-                    if (fieldName != null || i == 1) { // Always show at least field 1
-                        val isVisible = visibleFields.contains(i)
+                    val isVisible = visibleFields.contains(i)
                         
                         Card(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -244,7 +243,6 @@ fun EditChannelDialog(
                                         )
                                     }
                                 }
-                            }
                         }
                     }
                 }

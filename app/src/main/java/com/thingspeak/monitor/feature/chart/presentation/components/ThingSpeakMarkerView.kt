@@ -21,17 +21,22 @@ class ThingSpeakMarkerView(
     private val isDaily: Boolean,
     var baselineX: Long = 0L,
     var timeScale: Float = 1f,
-    var sampleTimestamps: List<Long> = emptyList()
+    var sampleTimestamps: List<Long> = emptyList(),
+    var timezone: String? = null
 ) : MarkerView(context, R.layout.layout_chart_marker) {
 
     private val tvContent: TextView = findViewById(R.id.tvContent)
-    private val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-        .withZone(ZoneId.systemDefault())
 
     override fun refreshContent(e: Entry?, highlight: Highlight?) {
         if (e == null) return
 
         val instant = Instant.ofEpochSecond((e.x * timeScale).toLong() + baselineX)
+        val zoneId = try {
+            timezone?.let { ZoneId.of(it) } ?: ZoneId.systemDefault()
+        } catch (ex: Exception) {
+            ZoneId.systemDefault()
+        }
+        val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(zoneId)
         val timeStr = dateTimeFormatter.format(instant)
         
         android.util.Log.d("ChartMarker", "refreshContent: Entry=(${e.x}, ${e.y}) | Time=$timeStr")

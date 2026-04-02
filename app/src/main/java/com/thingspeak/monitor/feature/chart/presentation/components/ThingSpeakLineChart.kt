@@ -30,18 +30,20 @@ fun ThingSpeakLineChart(
     xAxisMax: Float,
     drawingStyle: LineDrawingStyle = LineDrawingStyle.CUBIC,
     sampleTimestamps: List<Long> = emptyList(),
+    timezone: String? = null,
     onInteraction: (isActive: Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val axisColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f).toArgb()
     
-    val formatter = remember(isDailyRange, baselineX, timeScale, sampleTimestamps) { 
+    val formatter = remember(isDailyRange, baselineX, timeScale, sampleTimestamps, timezone) { 
         DateAxisFormatter(
             isDailyResource = isDailyRange, 
             baselineX = baselineX, 
             timeScale = timeScale,
-            sampleTimestamps = sampleTimestamps
+            sampleTimestamps = sampleTimestamps,
+            timezone = timezone
         ) 
     }
     var chartView by remember { mutableStateOf<LineChart?>(null) }
@@ -74,7 +76,7 @@ fun ThingSpeakLineChart(
                 chartView = this
                 
                 ChartSafeguards.applyChartSafeguards(this, axisColor, gridColor)
-                marker = ThingSpeakMarkerView(context, isDailyRange, baselineX, timeScale, sampleTimestamps)
+                marker = ThingSpeakMarkerView(context, isDailyRange, baselineX, timeScale, sampleTimestamps, timezone)
             }
         },
         update = { chart ->
@@ -94,6 +96,7 @@ fun ThingSpeakLineChart(
                 this.baselineX = baselineX
                 this.timeScale = timeScale
                 this.sampleTimestamps = sampleTimestamps
+                this.timezone = timezone
                 this.chartView = chart
             }
             

@@ -40,5 +40,6 @@ data class SavedChannel(
     val lastSyncTime: Long = 0L,
     val isNormalized: Boolean = false,
     val isMergingEnabled: Boolean = false,
-    val drawingStyle: String = "CUBIC"
+    val drawingStyle: String = "CUBIC",
+    val timezone: String? = null
 )

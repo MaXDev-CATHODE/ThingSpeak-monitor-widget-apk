@@ -474,13 +474,13 @@ fun WidgetConfigScreen(
                 Text(
                     text = stringResource(R.string.widget_grid_fields_hint),
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isFieldsValid) textColor.copy(alpha = 0.7f) else MaterialTheme.colorScheme.error
+                    color = if (isFieldsValid && visibleFields.size < 4) textColor.copy(alpha = 0.7f) else MaterialTheme.colorScheme.error
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
             
             Column {
-                val availableFieldNumbers = if (isGridMode) (1..8).toList() else (if (currentFieldNames.isNotEmpty()) currentFieldNames.keys.sorted() else (1..8).toList())
+                val availableFieldNumbers = (1..8).toList()
                 val chunkedRows = availableFieldNumbers.chunked(2)
                 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

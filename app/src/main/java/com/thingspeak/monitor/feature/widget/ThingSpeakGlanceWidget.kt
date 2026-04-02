@@ -102,6 +102,7 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
             } else null
 
             val lastSyncStatus = prefs[androidx.datastore.preferences.core.stringPreferencesKey("last_sync_status")] ?: "NONE"
+            val channelTimezone = prefs[androidx.datastore.preferences.core.stringPreferencesKey("channel_timezone")]
 
             val data = WidgetData(
                 channelName = name ?: "Loading...",
@@ -123,7 +124,8 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
                 violatedMaxFields = violatedMaxSet,
                 minSetFields = minSetFieldsSet,
                 maxSetFields = maxSetFieldsSet,
-                textColor = if (textColor.isNullOrBlank()) null else textColor
+                textColor = if (textColor.isNullOrBlank()) null else textColor,
+                channelTimezone = channelTimezone
             )
             
             WidgetUI(data)

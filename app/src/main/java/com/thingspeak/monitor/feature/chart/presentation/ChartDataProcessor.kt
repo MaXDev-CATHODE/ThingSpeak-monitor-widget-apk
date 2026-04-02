@@ -28,7 +28,8 @@ object ChartDataProcessor {
         fieldColorsMap: Map<Int, String> = emptyMap(),
         now: Instant = Instant.now(),
         resultsLimit: Int = 60,
-        baselineXOverride: Long? = null
+        baselineXOverride: Long? = null,
+        timezone: String? = null
     ): List<ChartDataBundle> {
         if (feeds.isEmpty()) return emptyList()
 
@@ -145,14 +146,14 @@ object ChartDataProcessor {
             return processBarCharts(
                 processedContext, activeFields, 
                 isMergingEnabled, isNormalized, fieldNames, baselineX, 
-                timeScale, minXDelta, maxXDelta, { idx -> safeParseColor(getColorForField(idx)) }
+                timeScale, minXDelta, maxXDelta, timezone, { idx -> safeParseColor(getColorForField(idx)) }
             )
         }
 
         return processLineCharts(
             processedContext, activeFields,
             isMergingEnabled, isNormalized, fieldNames, baselineX,
-            timeScale, minXDelta, maxXDelta, drawingStyle, { idx -> safeParseColor(getColorForField(idx)) }
+            timeScale, minXDelta, maxXDelta, drawingStyle, timezone, { idx -> safeParseColor(getColorForField(idx)) }
         )
     }
 
@@ -166,6 +167,7 @@ object ChartDataProcessor {
         timeScale: Float,
         minX: Float,
         maxX: Float,
+        timezone: String?,
         colorProvider: (Int) -> Int
     ): List<ChartDataBundle> {
         val timestamps = context.map { it.first }
@@ -195,7 +197,7 @@ object ChartDataProcessor {
                 set
             }
             if (dataSets.isEmpty()) return emptyList()
-            return listOf(ChartDataBundle.Bar("Merged Bars", BarData(dataSets).apply { barWidth = dynamicBarWidth }, baselineX, timeScale, bundleMinX, bundleMaxX, timestamps))
+            return listOf(ChartDataBundle.Bar("Merged Bars", BarData(dataSets).apply { barWidth = dynamicBarWidth }, baselineX, timeScale, bundleMinX, bundleMaxX, timestamps, timezone))
         } else {
             return activeFields.mapNotNull { fieldIndex ->
                 val entries = context.map { (ts, feed) ->
@@ -208,7 +210,7 @@ object ChartDataProcessor {
                 val set = BarDataSet(finalEntries, fieldNames[fieldIndex] ?: "Field $fieldIndex")
                 set.color = colorProvider(fieldIndex)
                 set.setDrawValues(false)
-                ChartDataBundle.Bar(fieldNames[fieldIndex] ?: "Field $fieldIndex", BarData(set).apply { barWidth = dynamicBarWidth }, baselineX, timeScale, bundleMinX, bundleMaxX, timestamps)
+                ChartDataBundle.Bar(fieldNames[fieldIndex] ?: "Field $fieldIndex", BarData(set).apply { barWidth = dynamicBarWidth }, baselineX, timeScale, bundleMinX, bundleMaxX, timestamps, timezone)
             }
         }
     }
@@ -224,6 +226,7 @@ object ChartDataProcessor {
         minX: Float,
         maxX: Float,
         drawingStyle: LineDrawingStyle,
+        timezone: String?,
         colorProvider: (Int) -> Int
     ): List<ChartDataBundle> {
         val timestamps = context.map { it.first }
@@ -241,7 +244,7 @@ object ChartDataProcessor {
                 set
             }
             if (dataSets.isEmpty()) return emptyList()
-            return listOf(ChartDataBundle.Line("Merged View", LineData(dataSets), baselineX, timeScale, minX, maxX, drawingStyle, timestamps))
+            return listOf(ChartDataBundle.Line("Merged View", LineData(dataSets), baselineX, timeScale, minX, maxX, drawingStyle, timestamps, timezone))
         } else {
             return activeFields.mapNotNull { fieldIndex ->
                 val entries = context.map { (ts, feed) ->
@@ -253,7 +256,7 @@ object ChartDataProcessor {
                 val finalEntries = if (isNormalized) normalizeEntries(entries) else entries
                 val set = LineDataSet(finalEntries, fieldNames[fieldIndex] ?: "Field $fieldIndex")
                 set.color = colorProvider(fieldIndex)
-                ChartDataBundle.Line(fieldNames[fieldIndex] ?: "Field $fieldIndex", LineData(set), baselineX, timeScale, minX, maxX, drawingStyle, timestamps)
+                ChartDataBundle.Line(fieldNames[fieldIndex] ?: "Field $fieldIndex", LineData(set), baselineX, timeScale, minX, maxX, drawingStyle, timestamps, timezone)
             }
         }
     }

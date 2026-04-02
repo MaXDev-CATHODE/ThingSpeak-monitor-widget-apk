@@ -12,6 +12,7 @@ data class Channel(
     val description: String = "",
     val apiKey: String? = null,
     val fieldNames: Map<Int, String> = emptyMap(),
+    val fieldUnits: Map<Int, String> = emptyMap(),
     val lastSyncStatus: SyncStatus = SyncStatus.NONE,
     val widgetBgColorHex: String? = null,
     val widgetTextColorHex: String? = null,
@@ -39,7 +40,8 @@ data class Channel(
     val chartTimespan: String = "1D",
     val isNormalized: Boolean = false,
     val isMergingEnabled: Boolean = false,
-    val drawingStyle: String = "CUBIC"
+    val drawingStyle: String = "CUBIC",
+    val timezone: String? = null
 )
 
 fun Channel.toSavedChannel(): com.thingspeak.monitor.core.datastore.SavedChannel = 
@@ -48,7 +50,9 @@ fun Channel.toSavedChannel(): com.thingspeak.monitor.core.datastore.SavedChannel
         name = name,
         apiKey = apiKey,
         fieldNames = fieldNames,
+        fieldUnits = fieldUnits,
         widgetBgColorHex = widgetBgColorHex,
+        widgetTextColorHex = widgetTextColorHex,
         widgetTransparency = widgetTransparency,
         widgetFontSize = widgetFontSize,
         widgetVisibleFields = widgetVisibleFields,
@@ -74,7 +78,8 @@ fun Channel.toSavedChannel(): com.thingspeak.monitor.core.datastore.SavedChannel
         lastSyncTime = lastSyncTime,
         isNormalized = isNormalized,
         isMergingEnabled = isMergingEnabled,
-        drawingStyle = drawingStyle
+        drawingStyle = drawingStyle,
+        timezone = timezone
     )
 
 enum class SyncStatus {

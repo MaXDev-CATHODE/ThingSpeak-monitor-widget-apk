@@ -7,19 +7,27 @@ import java.time.format.DateTimeFormatter
 
 /**
  * Formatter for X-Axis to display dates instead of raw Float values.
- * Standardized for Epoch-offset (Delta Seconds) input (Agent 3.7.5).
+ * Standardized for Epoch-offset (Delta Seconds) input.
  */
 class DateAxisFormatter(
     var isDailyResource: Boolean = true,
     var baselineX: Long = 0L,
     var timeScale: Float = 1f, // Standardized to 1.0f (seconds)
     var chart: com.github.mikephil.charting.charts.BarLineChartBase<*>? = null,
-    var sampleTimestamps: List<Long> = emptyList() 
+    var sampleTimestamps: List<Long> = emptyList(),
+    timezone: String? = null
 ) : ValueFormatter() {
-    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
-    private val timeSecondsFormatter = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
-    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM").withZone(ZoneId.systemDefault())
-    private val dateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault())
+    
+    private val zoneId: ZoneId = try {
+        if (!timezone.isNullOrBlank()) ZoneId.of(timezone) else ZoneId.systemDefault()
+    } catch (e: Exception) {
+        ZoneId.systemDefault()
+    }
+
+    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm").withZone(zoneId)
+    private val timeSecondsFormatter = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(zoneId)
+    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM").withZone(zoneId)
+    private val dateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(zoneId)
 
     // Cache to prevent GC thrashing
     private val formatCache = android.util.LruCache<Long, String>(250)
@@ -27,7 +35,6 @@ class DateAxisFormatter(
 
     override fun getFormattedValue(value: Float): String {
         return try {
-            // SYSTEM X = TIME DELTA (Agent 3.7.1 Absolute Fix)
             val seconds = value.toLong() + baselineX
             
             // Determine visible range in seconds to choose format

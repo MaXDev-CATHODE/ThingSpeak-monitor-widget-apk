@@ -39,6 +39,7 @@ import javax.inject.Inject
 
 sealed class ChartDataBundle {
     abstract val title: String
+    abstract val timezone: String?
     
     data class Line(
         override val title: String,
@@ -48,7 +49,8 @@ sealed class ChartDataBundle {
         val xAxisMin: Float,
         val xAxisMax: Float,
         val drawingStyle: com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle = com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.CUBIC,
-        val sampleTimestamps: List<Long> = emptyList()
+        val sampleTimestamps: List<Long> = emptyList(),
+        override val timezone: String? = null
     ) : ChartDataBundle()
 
     data class Bar(
@@ -58,7 +60,8 @@ sealed class ChartDataBundle {
         val timeScale: Float,
         val xAxisMin: Float,
         val xAxisMax: Float,
-        val sampleTimestamps: List<Long> = emptyList()
+        val sampleTimestamps: List<Long> = emptyList(),
+        override val timezone: String? = null
     ) : ChartDataBundle()
 }
 
@@ -321,7 +324,8 @@ class ChartViewModel @Inject constructor(
                         "spline", "cubic" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.CUBIC
                         "step" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.STEPPED
                         else -> _drawingStyle.value
-                    }
+                    },
+                    timezone = channel?.timezone
                 )
             }
             android.util.Log.d("TS_DEBUG", "processCurrentData COMPLETED: id=${channel?.id}, bundles=${bundles.size}, stableBaselineX=$stableBaselineX. Took ${System.currentTimeMillis() - startTime}ms")

@@ -26,18 +26,20 @@ fun ThingSpeakBarChart(
     xAxisMin: Float,
     xAxisMax: Float,
     sampleTimestamps: List<Long> = emptyList(),
+    timezone: String? = null,
     onInteraction: (isActive: Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val axisColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f).toArgb()
     
-    val formatter = remember(isDailyRange, baselineX, timeScale, sampleTimestamps) { 
+    val formatter = remember(isDailyRange, baselineX, timeScale, sampleTimestamps, timezone) { 
         DateAxisFormatter(
             isDailyResource = isDailyRange, 
             baselineX = baselineX, 
             timeScale = timeScale,
-            sampleTimestamps = sampleTimestamps
+            sampleTimestamps = sampleTimestamps,
+            timezone = timezone
         ) 
     }
     var chartView by remember { mutableStateOf<BarChart?>(null) }
@@ -68,7 +70,7 @@ fun ThingSpeakBarChart(
                 chartView = this
                 description.isEnabled = false
                 axisRight.isEnabled = false
-                val markerView = ThingSpeakMarkerView(context, isDailyRange, baselineX, timeScale, sampleTimestamps)
+                val markerView = ThingSpeakMarkerView(context, isDailyRange, baselineX, timeScale, sampleTimestamps, timezone)
                 markerView.chartView = this
                 this.marker = markerView
                 setDrawMarkers(true)
@@ -122,6 +124,7 @@ fun ThingSpeakBarChart(
                 this.baselineX = baselineX
                 this.timeScale = timeScale
                 this.sampleTimestamps = sampleTimestamps
+                this.timezone = timezone
                 this.chartView = chart
             }
             

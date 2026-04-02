@@ -57,6 +57,7 @@ object WidgetUpdateHelper {
                 this[stringPreferencesKey("field_units")] = fieldUnitsJson
                 this[booleanPreferencesKey("is_refreshing")] = false
                 this[stringPreferencesKey("last_sync_status")] = channel.lastSyncStatus
+                channel.timezone?.let { this[stringPreferencesKey("channel_timezone")] = it }
                 
                 if (cachedEntryStr != null) {
                     this[stringPreferencesKey("cached_entry")] = cachedEntryStr

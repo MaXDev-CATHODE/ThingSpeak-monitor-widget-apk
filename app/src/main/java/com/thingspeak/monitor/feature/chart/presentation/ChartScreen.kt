@@ -323,6 +323,7 @@ fun ChartScreen(
                                         xAxisMax = bundle.xAxisMax,
                                         drawingStyle = bundle.drawingStyle,
                                         sampleTimestamps = bundle.sampleTimestamps,
+                                        timezone = bundle.timezone,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
@@ -335,6 +336,7 @@ fun ChartScreen(
                                         xAxisMin = bundle.xAxisMin,
                                         xAxisMax = bundle.xAxisMax,
                                         sampleTimestamps = bundle.sampleTimestamps,
+                                        timezone = bundle.timezone,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
@@ -470,6 +472,7 @@ fun ChartCard(
                             xAxisMax = bundle.xAxisMax,
                             drawingStyle = bundle.drawingStyle,
                             sampleTimestamps = bundle.sampleTimestamps,
+                            timezone = bundle.timezone,
                             onInteraction = onInteraction,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -483,6 +486,7 @@ fun ChartCard(
                             xAxisMin = bundle.xAxisMin,
                             xAxisMax = bundle.xAxisMax,
                             sampleTimestamps = bundle.sampleTimestamps,
+                            timezone = bundle.timezone,
                             onInteraction = onInteraction,
                             modifier = Modifier.fillMaxSize()
                         )

@@ -47,7 +47,8 @@ data class WidgetData(
     val visibleFields: Set<Int>? = null,
     val chartType: String? = "line",
     val chartBitmap: android.graphics.Bitmap? = null,
-    val isRefreshing: Boolean = false
+    val isRefreshing: Boolean = false,
+    val channelTimezone: String? = null
 )
 
 @Composable
@@ -135,8 +136,9 @@ fun WidgetUI(data: WidgetData) {
                     }
                 }
                 if (!isTiny && data.entry != null) {
+                    val timeStr = WidgetUtils.formatTime(data.entry.createdAt, data.channelTimezone)
                     Text(
-                        text = "Sync: Just now",
+                        text = "Measured: $timeStr",
                         style = TextStyle(
                             color = GlanceColorProvider(textColor.copy(alpha = 0.6f)),
                             fontSize = (subSize - 1).sp
