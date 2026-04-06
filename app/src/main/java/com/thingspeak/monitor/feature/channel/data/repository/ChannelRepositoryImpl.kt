@@ -261,7 +261,8 @@ class ChannelRepositoryImpl @Inject constructor(
                         fieldNames = channelDomain.fieldNames,
                         lastSyncStatus = "SUCCESS",
                         lastSyncTime = System.currentTimeMillis(),
-                        chartTimespan = chartTimespan ?: existing?.chartTimespan ?: "1D"
+                        chartTimespan = chartTimespan ?: existing?.chartTimespan ?: "1D",
+                        timezone = channelDomain.timezone ?: existing?.timezone
                     )
                     channelPrefs.save(updatedChannel)
                     android.util.Log.i("TS_DEBUG", "refreshFeed SUCCESS for $channelId. Took ${System.currentTimeMillis() - startTime}ms")

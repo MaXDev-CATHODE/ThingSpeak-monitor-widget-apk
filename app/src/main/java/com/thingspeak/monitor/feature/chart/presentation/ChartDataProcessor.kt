@@ -103,14 +103,16 @@ object ChartDataProcessor {
         val processedContext = List(targetCount) { i ->
             val bucketFeeds = buckets[i]
             val bStart = startTime + (i * bucketSizeSeconds).toLong()
-            val middleTs = bStart + (bucketSizeSeconds / 2).toLong()
 
             if (bucketFeeds.isNotEmpty()) {
                 dataBucketCount++
-                // Fast average calculation
-                val firstFeed = bucketFeeds.first().second
+                // Use the LATEST feed's timestamp in the bucket as the representative X coordinate
+                // to match the visual point with the actual measurement time.
+                val representativeFeed = bucketFeeds.last()
+                val actualTs = representativeFeed.first
+                
                 val avgFeed = FeedEntry(
-                    createdAt = firstFeed.createdAt,
+                    createdAt = representativeFeed.second.createdAt,
                     fields = activeFields.associateWith { fieldIdx ->
                         var sum = 0.0
                         var count = 0
@@ -124,9 +126,10 @@ object ChartDataProcessor {
                         if (count > 0) (sum / count).toString() else "0.0"
                     }
                 )
-                middleTs to avgFeed
+                actualTs to avgFeed
             } else {
                 zeroBucketCount++
+                val middleTs = bStart + (bucketSizeSeconds / 2).toLong()
                 val emptyFeed = FeedEntry(
                     createdAt = Instant.ofEpochSecond(middleTs).toString(),
                     fields = activeFields.associateWith { "0.0" }
