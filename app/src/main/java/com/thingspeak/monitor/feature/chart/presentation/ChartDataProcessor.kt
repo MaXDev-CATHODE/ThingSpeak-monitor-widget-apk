@@ -72,7 +72,9 @@ object ChartDataProcessor {
         }
 
         // 2. Fixed Axis Range Calculation (MANDATORY for 1D, 7D, 30D)
-        val endTime = now.epochSecond
+        // Adjust endTime to be at least the latest feed timestamp to prevent filtering out latest data (Agent 3.7.10)
+        val latestFeedTime = feedByTimestamp.lastOrNull()?.first ?: now.epochSecond
+        val endTime = maxOf(now.epochSecond, latestFeedTime)
         val startTime = endTime - (currentRangeDays.toLong() * 86400L)
         
         // USE START_TIME as baselineX for PERFECT coordinate alignment (Agent 3.7.6)
