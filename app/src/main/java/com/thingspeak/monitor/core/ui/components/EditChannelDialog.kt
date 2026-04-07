@@ -381,14 +381,33 @@ fun TimezonePickerDialog(
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn(modifier = Modifier.height(300.dp)) {
                     items(filteredTimezones) { tz ->
-                        Text(
-                            text = tz,
+                        val offset = remember(tz) {
+                            try {
+                                java.time.ZoneId.of(tz).rules.getOffset(java.time.Instant.now()).toString()
+                            } catch (e: Exception) {
+                                ""
+                            }
+                        }
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onConfirm(tz) }
                                 .padding(12.dp),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = tz,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            if (offset.isNotEmpty()) {
+                                Text(
+                                    text = offset,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                        }
                     }
                 }
             }
