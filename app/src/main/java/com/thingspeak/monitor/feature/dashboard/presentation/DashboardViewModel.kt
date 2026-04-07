@@ -168,7 +168,8 @@ class DashboardViewModel @Inject constructor(
         fieldYMax: Map<Int, Double>,
         textColor: String,
         visibleFields: Set<Int>,
-        widgetBgColorHex: String
+        widgetBgColorHex: String,
+        timezone: String?
     ) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -191,7 +192,8 @@ class DashboardViewModel @Inject constructor(
                                 textColor = textColor,
                                 widgetVisibleFields = visibleFields,
                                 widgetBgColorHex = widgetBgColorHex,
-                                chartTimespan = existing.chartTimespan // Keep existing
+                                chartTimespan = existing.chartTimespan,
+                                timezone = timezone
                             )
                         )
                         // Optionally refresh after update to confirm new API key works

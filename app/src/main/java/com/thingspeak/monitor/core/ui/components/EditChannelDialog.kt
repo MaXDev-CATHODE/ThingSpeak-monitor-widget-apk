@@ -32,6 +32,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import java.time.ZoneId
 import com.thingspeak.monitor.R
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
 import com.thingspeak.monitor.core.datastore.SavedChannel
@@ -58,7 +67,8 @@ fun EditChannelDialog(
         fieldYMax: Map<Int, Double>,
         textColor: String,
         visibleFields: Set<Int>,
-        widgetBgColorHex: String
+        widgetBgColorHex: String,
+        timezone: String?
     ) -> Unit
 ) {
     val channelId = channel.id.toString()
@@ -71,6 +81,8 @@ fun EditChannelDialog(
     var chartBgColor by remember { mutableStateOf(channel.chartBgColor ?: "#FFFFFF") }
     var textColor by remember { mutableStateOf(channel.textColor ?: "#000000") }
     var widgetBgColorHex by remember { mutableStateOf(channel.widgetBgColorHex ?: "#FFFFFF") }
+    var timezone by remember { mutableStateOf(channel.timezone ?: "") }
+    var showTimezonePicker by remember { mutableStateOf(false) }
     
     // Per-field states
     var visibleFields by remember { mutableStateOf(channel.widgetVisibleFields ?: (1..8).toSet()) }
@@ -162,6 +174,33 @@ fun EditChannelDialog(
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
                     )
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Timezone Configuration
+                OutlinedTextField(
+                    value = timezone.ifBlank { "System Default" },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Channel Timezone (Override)") },
+                    trailingIcon = { 
+                        IconButton(onClick = { showTimezonePicker = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = null)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().clickable { showTimezonePicker = true }
+                )
+
+                if (showTimezonePicker) {
+                    TimezonePickerDialog(
+                        initialTimezone = timezone,
+                        onDismiss = { showTimezonePicker = false },
+                        onConfirm = { 
+                            timezone = it
+                            showTimezonePicker = false
+                        }
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -290,7 +329,8 @@ fun EditChannelDialog(
                         fieldYMax,
                         textColor,
                         visibleFields,
-                        widgetBgColorHex
+                        widgetBgColorHex,
+                        timezone.ifBlank { null }
                     )
                 }
             ) {
@@ -301,6 +341,60 @@ fun EditChannelDialog(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.dialog_cancel))
             }
+        }
+    )
+}
+
+/**
+ * Picker for selecting a JVM timezone by ID.
+ */
+@Composable
+fun TimezonePickerDialog(
+    initialTimezone: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var filter by remember { mutableStateOf("") }
+    val timezones = remember { ZoneId.getAvailableZoneIds().sorted() }
+    val filteredTimezones = remember(filter) {
+        timezones.filter { it.contains(filter, ignoreCase = true) }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Timezone") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = filter,
+                    onValueChange = { filter = it },
+                    label = { Text("Search (e.g. New_York, GMT-5)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        if (filter.isNotEmpty()) {
+                            IconButton(onClick = { filter = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = null)
+                            }
+                        }
+                    }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(modifier = Modifier.height(300.dp)) {
+                    items(filteredTimezones) { tz ->
+                        Text(
+                            text = tz,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onConfirm(tz) }
+                                .padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }

@@ -45,7 +45,8 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
             
             // If name is missing OR entry is missing, we are in "Loading" state. 
             // Trigger immediate repair if we have a binding.
-            if ((name == null || entryJson == null) && boundChannelId != -1L) {
+            // Prevent infinite loops by checking isRefreshing
+            if ((name == null || entryJson == null) && boundChannelId != -1L && !isRefreshing) {
                 androidx.compose.runtime.LaunchedEffect(boundChannelId) {
                     updateAppWidget(context, appWidgetId)
                 }
@@ -153,6 +154,11 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
         }
 
         val glanceId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getGlanceIdBy(appWidgetId)
+        if (glanceId == null) {
+            android.util.Log.e("TS_DEBUG", "updateAppWidget: Could not find GlanceId for $appWidgetId")
+            return
+        }
+
         val repo = entryPoint.channelRepository()
         val checkAlertRules = entryPoint.checkAlertRulesUseCase()
         
@@ -162,10 +168,8 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
             checkAlertRules(latestFeed!!, widgetRules) 
         } else emptyList<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>()
         
-        val chartResults = glanceId?.let { gid ->
-            val prefs = androidx.glance.appwidget.state.getAppWidgetState(context, WidgetPreferencesStateDefinition, gid)
-            prefs[androidx.datastore.preferences.core.intPreferencesKey("chart_results")]
-        } ?: 60
+        val prefs = androidx.glance.appwidget.state.getAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId)
+        val chartResults = prefs[androidx.datastore.preferences.core.intPreferencesKey("chart_results")] ?: 60
         
         WidgetUpdateHelper.updateWidgetPreferences(
             context = context, 

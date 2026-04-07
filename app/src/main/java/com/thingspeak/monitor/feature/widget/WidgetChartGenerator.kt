@@ -15,7 +15,8 @@ object WidgetChartGenerator {
         isNormalized: Boolean = false,
         width: Int = 400,
         height: Int = 150,
-        bgColor: Int = Color.TRANSPARENT
+        bgColor: Int = Color.TRANSPARENT,
+        fieldColorsOverride: Map<Int, String>? = null
     ): Bitmap? {
         if (entries.isEmpty()) return null
 
@@ -26,7 +27,7 @@ object WidgetChartGenerator {
             canvas.drawColor(bgColor)
         }
 
-        val fieldColors = listOf(
+        val defaultFieldColors = listOf(
             "#4CAF50", "#2196F3", "#F44336", "#FFEB3B",
             "#9C27B0", "#FF9800", "#00BCD4", "#E91E63"
         )
@@ -35,8 +36,9 @@ object WidgetChartGenerator {
         var globalMax = -Double.MAX_VALUE
         if (!isNormalized) {
             for (entry in entries) {
-                for (valueStr in entry.fields.values) {
-                    val v = valueStr?.toDoubleOrNull()
+                // Only consider fields that are actually being drawn
+                fieldIndices.forEach { fieldIdx ->
+                    val v = entry.fields[fieldIdx]?.toDoubleOrNull()
                     if (v != null) {
                         if (v < globalMin) globalMin = v
                         if (v > globalMax) globalMax = v
@@ -45,10 +47,16 @@ object WidgetChartGenerator {
             }
             if (globalMin == Double.MAX_VALUE) globalMin = 0.0
             if (globalMax == -Double.MAX_VALUE) globalMax = 1.0
+            
+            // Add slight padding to Y range to avoid lines touching edges
+            val padding = (globalMax - globalMin) * 0.05
+            globalMin -= padding
+            globalMax += padding
         }
 
         fieldIndices.sorted().forEach { fieldIdx ->
-            val colorStr = fieldColors.getOrElse(fieldIdx - 1) { "#808080" }
+            val colorStr = fieldColorsOverride?.get(fieldIdx) 
+                ?: defaultFieldColors.getOrElse(fieldIdx - 1) { "#808080" }
             val rawDataPoints = entries.mapNotNull { it.fields[fieldIdx]?.toDoubleOrNull() }
             if (rawDataPoints.size < 2) return@forEach
 

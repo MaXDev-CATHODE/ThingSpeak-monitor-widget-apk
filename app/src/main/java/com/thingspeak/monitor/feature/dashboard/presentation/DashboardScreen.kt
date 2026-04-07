@@ -120,10 +120,10 @@ fun DashboardScreen(
         EditChannelDialog(
             channel = channel,
             onDismiss = { channelToEdit = null },
-            onConfirm = { id, name, apiKey, chartType, chartResults, chartColor, chartBgColor, fieldColors, fieldYMin, fieldYMax, textColor, visibleFields, widgetBgColorHex ->
+            onConfirm = { id, name, apiKey, chartType, chartResults, chartColor, chartBgColor, fieldColors, fieldYMin, fieldYMax, textColor, visibleFields, widgetBgColorHex, timezone ->
                 viewModel.updateChannel(
                     id, name, apiKey, chartType, chartResults, 
-                    chartColor, chartBgColor, fieldColors, fieldYMin, fieldYMax, textColor, visibleFields, widgetBgColorHex
+                    chartColor, chartBgColor, fieldColors, fieldYMin, fieldYMax, textColor, visibleFields, widgetBgColorHex, timezone
                 )
                 channelToEdit = null
             }

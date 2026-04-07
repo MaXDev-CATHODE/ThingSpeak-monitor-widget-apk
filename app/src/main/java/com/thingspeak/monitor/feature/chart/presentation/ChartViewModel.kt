@@ -291,7 +291,7 @@ class ChartViewModel @Inject constructor(
         
         viewModelScope.launch {
             val channel = _channelData.value
-            val selectedFields = channel?.widgetVisibleFields?.ifEmpty { null } ?: setOf(1)
+            val selectedFields = channel?.widgetVisibleFields ?: (1..8).toSet()
             val isNormalized = channel?.isNormalized ?: false
             _isDailyRange.value = (_currentRangeDays.value <= 1)
 
@@ -350,8 +350,48 @@ class ChartViewModel @Inject constructor(
         loadChartData(diff.toInt().coerceAtLeast(1))
     }
     
-    fun exportCsv(): String = ""
-    fun exportPdf(stream: java.io.OutputStream, name: String) {}
+    fun exportCsv(): String {
+        if (lastLoadedFeeds.isEmpty()) return ""
+        
+        val channel = _channelData.value
+        val visibleIndices = channel?.widgetVisibleFields ?: (1..8).toSet()
+        val exportFieldNames = visibleIndices.sorted().associateWith { 
+            channel?.fieldNames?.get(it) ?: "Field $it"
+        }
+        val timezone = channel?.timezone
+        
+        val csvData = com.thingspeak.monitor.core.utils.ExportUtils.generateCsv(
+            entries = lastLoadedFeeds,
+            fieldNames = exportFieldNames,
+            timezone = timezone
+        )
+        
+        // Prepended UTF-8 BOM for Excel compatibility
+        return "\ufeff$csvData"
+    }
+
+    fun exportPdf(stream: java.io.OutputStream, name: String) {
+        if (lastLoadedFeeds.isEmpty()) return
+        val channel = _channelData.value
+        val channelName = channel?.name ?: name
+        val visibleIndices = channel?.widgetVisibleFields ?: (1..8).toSet()
+        val exportFieldNames = visibleIndices.sorted().associateWith { 
+            channel?.fieldNames?.get(it) ?: "Field $it"
+        }
+        val timezone = channel?.timezone
+        
+        try {
+            com.thingspeak.monitor.core.utils.ExportUtils.writePdfReport(
+                outputStream = stream,
+                channelName = channelName,
+                entries = lastLoadedFeeds,
+                fieldNames = exportFieldNames,
+                timezone = timezone
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("TS_DEBUG", "Error exporting PDF", e)
+        }
+    }
 
     /**
      * Auto-refresh loop for charts.

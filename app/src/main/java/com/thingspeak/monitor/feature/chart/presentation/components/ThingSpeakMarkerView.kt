@@ -47,7 +47,7 @@ class ThingSpeakMarkerView(
         val zoneId = getTimeZone(timezone)
         
         val dateTimeFormatter = if (isDaily) {
-            DateTimeFormatter.ofPattern("HH:mm:ss").withZone(zoneId)
+            DateTimeFormatter.ofPattern("MMM dd, HH:mm:ss").withZone(zoneId)
         } else {
             DateTimeFormatter.ofPattern("MMM dd, HH:mm").withZone(zoneId)
         }

@@ -60,21 +60,21 @@ fun WidgetUI(data: WidgetData) {
     val isCompact = size.height < 140.dp || size.width < 200.dp
     val isTiny = size.height < 100.dp || size.width < 150.dp
     
-    // Scale font sizes dynamically
+    // Scale font sizes dynamically - respect user data.fontSize
     val titleSize = when {
         isTiny -> 10
         isCompact -> 11
-        else -> minOf(data.fontSize + 2, 14)
+        else -> data.fontSize + 2
     }
     val fieldSize = when {
         isTiny -> 8
         isCompact -> 9
-        else -> minOf(data.fontSize, 11)
+        else -> data.fontSize
     }
     val subSize = when {
         isTiny -> 7
         isCompact -> 8
-        else -> minOf(data.fontSize - 2, 9)
+        else -> data.fontSize - 2
     }
     val pad = if (isCompact) 4 else 8
     
@@ -137,13 +137,23 @@ fun WidgetUI(data: WidgetData) {
                 }
                 if (!isTiny && data.entry != null) {
                     val timeStr = WidgetUtils.formatTime(data.entry.createdAt, data.channelTimezone)
-                    Text(
-                        text = "Measured: $timeStr",
-                        style = TextStyle(
-                            color = GlanceColorProvider(textColor.copy(alpha = 0.6f)),
-                            fontSize = (subSize - 1).sp
+                    val isStale = WidgetUtils.isDataStale(data.entry.createdAt, data.syncIntervalMinutes * 60 * 1000L)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Measured: $timeStr",
+                            style = TextStyle(
+                                color = GlanceColorProvider(textColor.copy(alpha = 0.6f)),
+                                fontSize = (subSize - 1).sp
+                            )
                         )
-                    )
+                        if (isStale) {
+                            Spacer(GlanceModifier.width(3.dp))
+                            Text(
+                                text = "⌛",
+                                style = TextStyle(color = GlanceColorProvider(textColor.copy(alpha = 0.6f)), fontSize = (subSize - 1).sp)
+                            )
+                        }
+                    }
                 }
             }
             
@@ -215,11 +225,10 @@ fun WidgetUI(data: WidgetData) {
             }
             
             val unit = data.fieldUnits[fieldNum] ?: ""
-            val roundedValue = if (value != null) {
-                try {
-                    val num = value.toDoubleOrNull() ?: 0.0
+            val roundedValue = if (value != null && value != "null") {
+                value.toDoubleOrNull()?.let { num ->
                     "%.${data.chartRounding}f".format(num)
-                } catch (e: Exception) { value }
+                } ?: value
             } else "—"
 
             Row(
@@ -261,7 +270,7 @@ fun WidgetUI(data: WidgetData) {
         }
 
         // Chart Section — fills remaining space
-        if (data.chartBitmap != null && !isTiny) {
+        if (!isTiny) {
             Spacer(GlanceModifier.height(4.dp))
             Box(
                 modifier = GlanceModifier
@@ -271,12 +280,19 @@ fun WidgetUI(data: WidgetData) {
                     .cornerRadius(8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Image(
-                    provider = ImageProvider(data.chartBitmap),
-                    contentDescription = "Live Chart",
-                    modifier = GlanceModifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit
-                )
+                if (data.chartBitmap != null) {
+                    Image(
+                        provider = ImageProvider(data.chartBitmap),
+                        contentDescription = "Live Chart",
+                        modifier = GlanceModifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Text(
+                        text = if (data.isRefreshing) "Loading Chart..." else "No chart data",
+                        style = TextStyle(color = GlanceColorProvider(textColor.copy(alpha = 0.4f)), fontSize = 10.sp)
+                    )
+                }
             }
         }
     }

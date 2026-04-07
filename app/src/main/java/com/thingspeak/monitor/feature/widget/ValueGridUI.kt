@@ -72,20 +72,32 @@ fun ValueGridContent(context: Context, data: WidgetData) {
                     if (data.lastSyncStatus == "ERROR_SYNC") {
                         Spacer(GlanceModifier.width(4.dp))
                         Text(
-                            text = "⚠️",
-                            style = TextStyle(fontSize = (if (isSmallHeight) 11 else 14).sp)
+                            text = "⚠",
+                            style = TextStyle(
+                                color = ColorProvider(Color.Red),
+                                fontSize = (if (isSmallHeight) (data.fontSize - 1).coerceAtLeast(10) else data.fontSize).sp
+                            )
                         )
                     }
                 }
                 if (data.entry != null) {
                     val timeStr = WidgetUtils.formatTime(data.entry.createdAt, data.channelTimezone)
-                    Text(
-                        text = "Measured: $timeStr",
-                        style = TextStyle(
-                            color = ColorProvider(contentColorVal.copy(alpha = 0.6f)),
-                            fontSize = (if (isSmallHeight) 8 else 9).sp
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Measured: $timeStr",
+                            style = TextStyle(
+                                color = ColorProvider(contentColorVal.copy(alpha = 0.6f)),
+                                fontSize = (if (isSmallHeight) 8 else 9).sp
+                            )
                         )
-                    )
+                        if (isStale) {
+                            Spacer(GlanceModifier.width(4.dp))
+                            Text(
+                                text = "⌛", // Hourglass for stale data
+                                style = TextStyle(fontSize = 9.sp)
+                            )
+                        }
+                    }
                 }
             }
             
@@ -167,10 +179,11 @@ fun ValueGridContent(context: Context, data: WidgetData) {
                                     modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
                                     index = fieldId,
                                     data = data,
-                                    contentColor = contentColorVal,
-                                    secondaryColor = secondaryContentColorVal,
+                                    contentColor = if (isStale) contentColorVal.copy(alpha = 0.5f) else contentColorVal,
+                                    secondaryColor = if (isStale) secondaryContentColorVal.copy(alpha = 0.4f) else secondaryContentColorVal,
                                     baseColor = baseColor,
-                                    tileCount = fieldsToRender.size
+                                    tileCount = fieldsToRender.size,
+                                    isSmallHeight = isSmallHeight
                                 )
                             } else {
                                 Spacer(modifier = GlanceModifier.defaultWeight())
@@ -207,7 +220,8 @@ fun ValueTile(
     contentColor: Color, 
     secondaryColor: Color, 
     baseColor: Int,
-    tileCount: Int
+    tileCount: Int,
+    isSmallHeight: Boolean
 ) {
     val name = data.fieldNames[index]?.takeIf { it.isNotBlank() } ?: "Field $index"
     val unit = data.fieldUnits[index] ?: ""
@@ -223,21 +237,22 @@ fun ValueTile(
         else -> null
     }
 
-    val tileValue = try {
-        val num = rawValue?.toDoubleOrNull() ?: 0.0
-        "%.${data.chartRounding}f".format(num)
-    } catch (e: Exception) { rawValue ?: "—" }
+    val tileValue = if (rawValue != null && rawValue != "null") {
+        rawValue.toDoubleOrNull()?.let { num ->
+            "%.${data.chartRounding}f".format(num)
+        } ?: rawValue
+    } else "—"
 
     val isViolated = data.violatedMinFields.contains(index) || data.violatedMaxFields.contains(index)
     val tileValueColor = if (isViolated) Color.Red else contentColor
     val valueFontSize = when(tileCount) {
-        1 -> (data.fontSize + 16).sp
-        2 -> (data.fontSize + 8).sp
-        else -> (data.fontSize + 4).sp
+        1 -> (data.fontSize + (if (isSmallHeight) 8 else 16)).sp
+        2 -> (data.fontSize + (if (isSmallHeight) 4 else 8)).sp
+        else -> (data.fontSize + (if (isSmallHeight) 1 else 4)).sp
     }
     
     val nameFontSize = when(tileCount) {
-        1 -> (data.fontSize + 2).sp
+        1 -> (data.fontSize + (if (isSmallHeight) 0 else 2)).sp
         else -> 10.sp
     }
 

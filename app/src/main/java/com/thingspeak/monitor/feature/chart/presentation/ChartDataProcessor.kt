@@ -100,7 +100,7 @@ object ChartDataProcessor {
         var dataBucketCount = 0
         var zeroBucketCount = 0
 
-        val processedContext = List(targetCount) { i ->
+        val processedContext = (0 until targetCount).mapNotNull { i ->
             val bucketFeeds = buckets[i]
             val bStart = startTime + (i * bucketSizeSeconds).toLong()
 
@@ -123,18 +123,13 @@ object ChartDataProcessor {
                                 count++
                             }
                         }
-                        if (count > 0) (sum / count).toString() else "0.0"
-                    }
+                        if (count > 0) (sum / count).toString() else null
+                    }.filterValues { it != null } as Map<Int, String>
                 )
                 actualTs to avgFeed
             } else {
                 zeroBucketCount++
-                val middleTs = bStart + (bucketSizeSeconds / 2).toLong()
-                val emptyFeed = FeedEntry(
-                    createdAt = Instant.ofEpochSecond(middleTs).toString(),
-                    fields = activeFields.associateWith { "0.0" }
-                )
-                middleTs to emptyFeed
+                null
             }
         }
         

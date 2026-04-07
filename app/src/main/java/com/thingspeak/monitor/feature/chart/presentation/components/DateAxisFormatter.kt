@@ -18,10 +18,17 @@ class DateAxisFormatter(
     timezone: String? = null
 ) : ValueFormatter() {
     
-    private val zoneId: ZoneId = try {
-        if (!timezone.isNullOrBlank()) ZoneId.of(timezone) else ZoneId.systemDefault()
-    } catch (e: Exception) {
-        ZoneId.systemDefault()
+    private val zoneId: ZoneId = when {
+        timezone.isNullOrBlank() -> ZoneId.systemDefault()
+        else -> try {
+            ZoneId.of(timezone)
+        } catch (e: Exception) {
+            try {
+                ZoneId.of(timezone.replace(" ", ""))
+            } catch (e2: Exception) {
+                ZoneId.systemDefault()
+            }
+        }
     }
 
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm").withZone(zoneId)

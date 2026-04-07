@@ -124,6 +124,7 @@ fun ChannelCard(
                     val label = when(channel.chartType?.lowercase()) {
                         "spline" -> "SPL"
                         "bar" -> "BAR"
+                        "column" -> "COL"
                         "step" -> "STP"
                         else -> "LIN"
                     }

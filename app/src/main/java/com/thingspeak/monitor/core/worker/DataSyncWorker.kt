@@ -81,7 +81,8 @@ class DataSyncWorker @AssistedInject constructor(
                     val chartBitmap = WidgetChartGenerator.generateSimpleChart(
                         entries = entries.reversed(),
                         fieldIndices = channel.preferredChartFields?.ifEmpty { null } ?: setOf(1),
-                        isNormalized = channel.isNormalized
+                        isNormalized = channel.isNormalized,
+                        fieldColorsOverride = channel.fieldColors
                     )
                     
                     if (chartBitmap != null) {

@@ -115,12 +115,24 @@ fun ChartScreen(
         contract = ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri ->
         uri?.let {
-            scope.launch {
-                try {
-                    // Placeholder for PDF generation
-                    snackbarHostState.showSnackbar("PDF Export not implemented yet")
-                } catch (e: Exception) {
-                    snackbarHostState.showSnackbar("Error: ${e.message}")
+            val outputStream = try {
+                context.contentResolver.openOutputStream(it)
+            } catch (e: Exception) {
+                null
+            }
+
+            if (outputStream != null) {
+                scope.launch {
+                    try {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            outputStream.use { stream ->
+                                viewModel.exportPdf(stream, channelName)
+                            }
+                        }
+                        snackbarHostState.showSnackbar(context.getString(R.string.chart_export_success))
+                    } catch (e: Exception) {
+                        snackbarHostState.showSnackbar(context.getString(R.string.chart_export_error) + ": ${e.message}")
+                    }
                 }
             }
         }

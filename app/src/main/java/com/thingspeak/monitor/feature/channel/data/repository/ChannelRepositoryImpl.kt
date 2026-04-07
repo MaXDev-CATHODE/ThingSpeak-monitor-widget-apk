@@ -97,7 +97,8 @@ class ChannelRepositoryImpl @Inject constructor(
         chartTimespan = chartTimespan,
         isNormalized = isNormalized,
         isMergingEnabled = isMergingEnabled,
-        drawingStyle = drawingStyle
+        drawingStyle = drawingStyle,
+        timezone = timezone
     )
 
     private fun Channel.toSaved(): SavedChannel = SavedChannel(
@@ -131,7 +132,8 @@ class ChannelRepositoryImpl @Inject constructor(
         chartTimespan = chartTimespan,
         isNormalized = isNormalized,
         isMergingEnabled = isMergingEnabled,
-        drawingStyle = drawingStyle
+        drawingStyle = drawingStyle,
+        timezone = timezone
     )
 
     override suspend fun updateChannel(channel: Channel) {
@@ -164,7 +166,8 @@ class ChannelRepositoryImpl @Inject constructor(
                         chartTimespan = channel.chartTimespan,
                         isNormalized = channel.isNormalized,
                         isMergingEnabled = channel.isMergingEnabled,
-                        drawingStyle = channel.drawingStyle
+                        drawingStyle = channel.drawingStyle,
+                        timezone = channel.timezone
                     )
                 )
             }
@@ -255,6 +258,13 @@ class ChannelRepositoryImpl @Inject constructor(
                     val existingChannels = channelPrefs.observe().first()
                     val existing = existingChannels.find { it.id == channelId }
                     
+                    // PROTECTION: If existing channel has a manual timezone override, and API returns null/empty, PRESERVE existing.
+                    val finalTimezone = if (channelDomain.timezone.isNullOrBlank()) {
+                        existing?.timezone
+                    } else {
+                        channelDomain.timezone
+                    }
+
                     val updatedChannel = (existing ?: SavedChannel(id = channelId, name = channelDomain.name)).copy(
                         name = channelDomain.name,
                         apiKey = apiKey,
@@ -262,7 +272,7 @@ class ChannelRepositoryImpl @Inject constructor(
                         lastSyncStatus = "SUCCESS",
                         lastSyncTime = System.currentTimeMillis(),
                         chartTimespan = chartTimespan ?: existing?.chartTimespan ?: "1D",
-                        timezone = channelDomain.timezone ?: existing?.timezone
+                        timezone = finalTimezone
                     )
                     channelPrefs.save(updatedChannel)
                     android.util.Log.i("TS_DEBUG", "refreshFeed SUCCESS for $channelId. Took ${System.currentTimeMillis() - startTime}ms")

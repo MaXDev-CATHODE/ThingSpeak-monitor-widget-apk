@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.collect
 
 class ValueGridWidget : GlanceAppWidget() {
     override val stateDefinition: GlanceStateDefinition<*> = WidgetPreferencesStateDefinition
+    override val sizeMode = androidx.glance.appwidget.SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val entryPoint = EntryPointAccessors.fromApplication(context.applicationContext, WidgetEntryPoint::class.java)
@@ -42,7 +43,8 @@ class ValueGridWidget : GlanceAppWidget() {
             val entryJson = prefs[androidx.datastore.preferences.core.stringPreferencesKey("cached_entry")]
 
             // SELF-HEALING: If name or entry is missing, trigger repair
-            if ((name == "Loading..." || entryJson == null) && boundChannelId != -1L) {
+            // Prevent infinite loops by checking isRefreshing
+            if ((name == "Loading..." || entryJson == null) && boundChannelId != -1L && !isRefreshing) {
                 androidx.compose.runtime.LaunchedEffect(boundChannelId) {
                     updateAppWidget(context, appWidgetId)
                 }
@@ -140,10 +142,13 @@ class ValueGridWidget : GlanceAppWidget() {
         }
 
         val glanceId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getGlanceIdBy(appWidgetId)
-        val chartResults = glanceId?.let { gid ->
-            val prefs = androidx.glance.appwidget.state.getAppWidgetState(context, WidgetPreferencesStateDefinition, gid)
-            prefs[androidx.datastore.preferences.core.intPreferencesKey("chart_results")]
-        } ?: 60
+        if (glanceId == null) {
+            android.util.Log.e("TS_DEBUG", "updateAppWidget: Could not find GlanceId for $appWidgetId")
+            return
+        }
+
+        val prefs = androidx.glance.appwidget.state.getAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId)
+        val chartResults = prefs[androidx.datastore.preferences.core.intPreferencesKey("chart_results")] ?: 60
 
         WidgetUpdateHelper.updateWidgetPreferences(context, glanceId, channelToUse.copy(chartResults = chartResults), latestFeed)
         ValueGridWidget().update(context, glanceId)

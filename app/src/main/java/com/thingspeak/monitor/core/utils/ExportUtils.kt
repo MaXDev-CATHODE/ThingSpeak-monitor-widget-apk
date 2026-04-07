@@ -7,6 +7,10 @@ import android.graphics.Paint
 import android.graphics.Canvas
 import android.graphics.pdf.PdfDocument.PageInfo
 import java.io.OutputStream
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 /**
  * Utility class for exporting data to various formats.
@@ -14,14 +18,33 @@ import java.io.OutputStream
 object ExportUtils {
 
     /**
+     * Helper to format a UTC timestamp (ISO-8601) into a specific timezone.
+     */
+    private fun formatTimestamp(timestamp: String, timezoneId: String?): String {
+        return try {
+            val instant = Instant.parse(timestamp)
+            val zoneId = timezoneId?.let { 
+                try { ZoneId.of(it) } catch (e: Exception) { ZoneId.systemDefault() }
+            } ?: ZoneId.systemDefault()
+            val zonedDateTime = instant.atZone(zoneId)
+            zonedDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        } catch (e: Exception) {
+            // Fallback to raw string manipulation if parsing fails
+            timestamp.take(19).replace("T", " ")
+        }
+    }
+
+    /**
      * Generates CSV text based on feed entries.
      * 
      * @param entries List of entries to export.
      * @param fieldNames Map of channel field names.
+     * @param timezone Optional timezone override (e.g. "GMT-5")
      */
     fun generateCsv(
         entries: List<FeedEntry>,
-        fieldNames: Map<Int, String>
+        fieldNames: Map<Int, String>,
+        timezone: String? = null
     ): String {
         val sb = StringBuilder()
         
@@ -33,7 +56,8 @@ object ExportUtils {
         sb.append("\n")
         
         entries.forEach { entry ->
-            sb.append("${escapeCsv(entry.createdAt)},${entry.entryId}")
+            val formattedDate = formatTimestamp(entry.createdAt, timezone)
+            sb.append("${escapeCsv(formattedDate)},${entry.entryId}")
             sortedFieldIndices.forEach { index ->
                 sb.append(",${escapeCsv(entry.fields[index] ?: "")}")
             }
@@ -53,12 +77,15 @@ object ExportUtils {
 
     /**
      * Generates multi-page PDF report with all data.
+     * 
+     * @param timezone Optional timezone override (e.g. "GMT-5")
      */
     fun writePdfReport(
         outputStream: OutputStream,
         channelName: String,
         entries: List<FeedEntry>,
-        fieldNames: Map<Int, String>
+        fieldNames: Map<Int, String>,
+        timezone: String? = null
     ) {
         val pdfDocument = PdfDocument()
         val pageWidth = 595
@@ -81,8 +108,15 @@ object ExportUtils {
         y += 30f
         paint.textSize = 10f
         paint.isFakeBoldText = false
-        val currentDateTime = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-        canvas.drawText("Generation date: $currentDateTime", margin, y, paint)
+        
+        // Use user timezone for "Generation date" as well
+        val generationZone = timezone?.let { 
+            try { ZoneId.of(it) } catch (e: Exception) { ZoneId.systemDefault() }
+        } ?: ZoneId.systemDefault()
+        
+        val currentDateTime = ZonedDateTime.now(generationZone).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        
+        canvas.drawText("Generation date: $currentDateTime (${generationZone.id})", margin, y, paint)
         canvas.drawText("Entry count: ${entries.size}", margin, y + 15f, paint)
         
         y += 40f
@@ -90,7 +124,8 @@ object ExportUtils {
         canvas.drawLine(margin, y, pageWidth - margin, y, paint)
         y += 20f
         
-        val sortedIndices = fieldNames.keys.sorted().take(4) // More fields if they fit
+        val sortedIndices = fieldNames.keys.sorted()
+        val colWidth = if (sortedIndices.size > 4) (pageWidth - margin - 190f) / sortedIndices.size else 85f
         
         fun drawTableHeaders(c: Canvas, startY: Float) {
             paint.textSize = 10f
@@ -98,8 +133,8 @@ object ExportUtils {
             c.drawText("Date", margin, startY, paint)
             c.drawText("ID", margin + 140f, startY, paint)
             sortedIndices.forEachIndexed { i, index ->
-                val label = fieldNames[index]?.take(15) ?: "F$index"
-                c.drawText(label, margin + 190f + (i * 85f), startY, paint)
+                val label = fieldNames[index]?.take(if (sortedIndices.size > 5) 8 else 15) ?: "F$index"
+                c.drawText(label, margin + 190f + (i * colWidth), startY, paint)
             }
             c.drawLine(margin, startY + 5f, pageWidth - margin, startY + 5f, paint)
             paint.isFakeBoldText = false
@@ -120,12 +155,13 @@ object ExportUtils {
             }
             
             paint.textSize = 9f
-            canvas.drawText(entry.createdAt.take(19).replace("T", " "), margin, y, paint)
+            val formattedDate = formatTimestamp(entry.createdAt, timezone)
+            canvas.drawText(formattedDate, margin, y, paint)
             canvas.drawText(entry.entryId.toString(), margin + 140f, y, paint)
             
             sortedIndices.forEachIndexed { i, index ->
-                val valStr = entry.fields[index]?.take(10) ?: "-"
-                canvas.drawText(valStr, margin + 190f + (i * 85f), y, paint)
+                val valStr = entry.fields[index]?.take(if (sortedIndices.size > 5) 6 else 10) ?: "-"
+                canvas.drawText(valStr, margin + 190f + (i * colWidth), y, paint)
             }
             y += 18f
         }
