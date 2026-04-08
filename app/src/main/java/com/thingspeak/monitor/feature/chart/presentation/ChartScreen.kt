@@ -60,7 +60,6 @@ fun ChartScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val isDailyRange by viewModel.isDailyRange.collectAsStateWithLifecycle()
-    val isSmoothingEnabled by viewModel.isSmoothingEnabled.collectAsStateWithLifecycle()
     
     val fieldNames by viewModel.fieldNames.collectAsStateWithLifecycle()
     val channelName by viewModel.channelName.collectAsStateWithLifecycle()
