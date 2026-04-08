@@ -1,6 +1,5 @@
 package com.thingspeak.monitor.feature.chart.presentation
 
-import com.thingspeak.monitor.feature.chart.presentation.DataFilter
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thingspeak.monitor.core.error.ApiResult
@@ -99,9 +98,6 @@ class ChartViewModel @Inject constructor(
     private val _isDailyRange = MutableStateFlow(true)
     val isDailyRange: StateFlow<Boolean> = _isDailyRange.asStateFlow()
 
-    val dataFilter = MutableStateFlow(DataFilter.RAW)
-    val isSmoothingEnabled = MutableStateFlow(false)
-    
     private val _isMergingEnabled = _channelData.map { it?.isMergingEnabled ?: true }
         .stateIn(viewModelScope, SharingStarted.Lazily, true)
     val isMergingEnabled: StateFlow<Boolean> = _isMergingEnabled
@@ -253,11 +249,6 @@ class ChartViewModel @Inject constructor(
 
     fun refresh() = loadChartData()
 
-    fun toggleSmoothing() {
-        isSmoothingEnabled.value = !isSmoothingEnabled.value
-        processCurrentData()
-    }
-    
     fun setDrawingStyle(style: com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle) {
         val currentChannel = _channelData.value ?: return
         viewModelScope.launch {
@@ -341,11 +332,6 @@ class ChartViewModel @Inject constructor(
         }
     }
 
-    fun setFilter(filter: DataFilter) {
-        dataFilter.value = filter
-        processCurrentData()
-    }
-    
     fun setDateRange(start: Long, end: Long) {
         val diff = (end - start) / (1000 * 60 * 60 * 24)
         loadChartData(diff.toInt().coerceAtLeast(1))

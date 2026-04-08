@@ -238,35 +238,6 @@ fun ChartScreen(
                         } else null
                     )
                 }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(stringResource(R.string.chart_smooth), style = MaterialTheme.typography.labelMedium)
-                    Switch(
-                        checked = isSmoothingEnabled,
-                        onCheckedChange = { viewModel.toggleSmoothing() },
-                        modifier = Modifier.scale(0.7f)
-                    )
-                }
-
-                val dataFilter by viewModel.dataFilter.collectAsStateWithLifecycle()
-                var showFilterMenu by remember { mutableStateOf(false) }
-                Box {
-                    TextButton(onClick = { showFilterMenu = true }) {
-                        Text(text = dataFilter.name, style = MaterialTheme.typography.labelMedium)
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                    }
-                    DropdownMenu(expanded = showFilterMenu, onDismissRequest = { showFilterMenu = false }) {
-                        DataFilter.entries.forEach { filter ->
-                            DropdownMenuItem(text = { Text(filter.name) }, onClick = {
-                                viewModel.setFilter(filter)
-                                showFilterMenu = false
-                            })
-                        }
-                    }
-                }
             }
 
             PullToRefreshBox(
@@ -282,7 +253,6 @@ fun ChartScreen(
                             listState = listState,
                             viewModel = viewModel,
                             isDailyRange = isDailyRange,
-                            isSmoothingEnabled = isSmoothingEnabled,
                             onFullscreen = { fullscreenChart = it }
                         )
                     }
@@ -377,7 +347,6 @@ private fun ChartSuccessContent(
     listState: LazyListState,
     viewModel: ChartViewModel,
     isDailyRange: Boolean,
-    isSmoothingEnabled: Boolean,
     onFullscreen: (ChartDataBundle) -> Unit
 ) {
     var activeChartTitle by remember { mutableStateOf<String?>(null) }
@@ -396,7 +365,6 @@ private fun ChartSuccessContent(
             ChartCard(
                 bundle = bundle,
                 isDailyRange = isDailyRange,
-                isSmoothingEnabled = isSmoothingEnabled,
                 isActive = activeChartTitle == bundle.title,
                 onInteraction = { interacting ->
                     activeChartTitle = if (interacting) bundle.title else null
@@ -453,7 +421,6 @@ fun ShimmerChart() {
 fun ChartCard(
     bundle: ChartDataBundle,
     isDailyRange: Boolean,
-    isSmoothingEnabled: Boolean = false,
     isActive: Boolean = false,
     onInteraction: (Boolean) -> Unit = {},
     onFullscreen: () -> Unit
