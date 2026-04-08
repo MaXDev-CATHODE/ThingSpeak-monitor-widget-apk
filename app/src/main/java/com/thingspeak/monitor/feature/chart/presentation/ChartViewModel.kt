@@ -317,6 +317,7 @@ class ChartViewModel @Inject constructor(
                     fieldColorsMap = channel?.fieldColors ?: emptyMap(),
                     resultsLimit = resultsLimit,
                     baselineXOverride = stableBaselineX,
+                    processingType = channel?.chartProcessingType ?: "NONE",
                     drawingStyle = when (channel?.chartType?.lowercase()) {
                         "bar", "column" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.BAR
                         "area" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.AREA

@@ -170,5 +170,11 @@
     <string name="alert_edit_channel_title">Edit Channel Details</string>
     <string name="alert_save_channel">Save Changes</string>
     <string name="edit_channel_title">Edit Channel</string>
+    <string name="settings_processing_type">Processing Type</string>
+    <string name="settings_processing_none">None (Raw Data)</string>
+    <string name="settings_processing_average">Average</string>
+    <string name="settings_processing_max">Maximum</string>
+    <string name="settings_processing_min">Minimum</string>
+    <string name="settings_processing_sum">Sum</string>
 </resources>
 

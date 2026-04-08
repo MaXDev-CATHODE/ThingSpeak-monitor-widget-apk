@@ -29,7 +29,8 @@ object ChartDataProcessor {
         now: Instant = Instant.now(),
         resultsLimit: Int = 60,
         baselineXOverride: Long? = null,
-        timezone: String? = null
+        timezone: String? = null,
+        processingType: String = "NONE"
     ): List<ChartDataBundle> {
         if (feeds.isEmpty()) return emptyList()
 
@@ -102,36 +103,38 @@ object ChartDataProcessor {
         var dataBucketCount = 0
         var zeroBucketCount = 0
 
-        val processedContext = (0 until targetCount).mapNotNull { i ->
-            val bucketFeeds = buckets[i]
-            val bStart = startTime + (i * bucketSizeSeconds).toLong()
-
-            if (bucketFeeds.isNotEmpty()) {
-                dataBucketCount++
-                // Use the LATEST feed's timestamp in the bucket as the representative X coordinate
-                // to match the visual point with the actual measurement time.
-                val representativeFeed = bucketFeeds.last()
-                val actualTs = representativeFeed.first
-                
-                val avgFeed = FeedEntry(
-                    createdAt = representativeFeed.second.createdAt,
-                    fields = activeFields.associateWith { fieldIdx ->
-                        var sum = 0.0
-                        var count = 0
-                        for (bf in bucketFeeds) {
-                            val v = bf.second.fields[fieldIdx]?.toDoubleOrNull()
-                            if (v != null) {
-                                sum += v
-                                count++
+        val processedContext = if (processingType.uppercase() == "NONE" && feedByTimestamp.size <= 1000) {
+            // NO PROCESSING: Use raw feeds directly for maximum fidelity
+            android.util.Log.i("TS_DEBUG", "ProcessingType=NONE: Using raw feeds (${feedByTimestamp.size} points)")
+            feedByTimestamp
+        } else {
+            (0 until targetCount).mapNotNull { i ->
+                val bucketFeeds = buckets[i]
+                if (bucketFeeds.isNotEmpty()) {
+                    dataBucketCount++
+                    val representativeFeed = bucketFeeds.last()
+                    val actualTs = representativeFeed.first
+                    
+                    val processedFeed = FeedEntry(
+                        createdAt = representativeFeed.second.createdAt,
+                        fields = activeFields.associateWith { fieldIdx ->
+                            val values = bucketFeeds.mapNotNull { it.second.fields[fieldIdx]?.toDoubleOrNull() }
+                            if (values.isEmpty()) return@associateWith null
+                            
+                            val resultValue = when (processingType.uppercase()) {
+                                "MAX" -> values.maxOrNull()
+                                "MIN" -> values.minOrNull()
+                                "SUM" -> values.sum()
+                                else -> values.average() // Default to AVERAGE
                             }
-                        }
-                        if (count > 0) (sum / count).toString() else null
-                    }.filterValues { it != null } as Map<Int, String>
-                )
-                actualTs to avgFeed
-            } else {
-                zeroBucketCount++
-                null
+                            resultValue?.toString()
+                        }.filterValues { it != null } as Map<Int, String>
+                    )
+                    actualTs to processedFeed
+                } else {
+                    zeroBucketCount++
+                    null
+                }
             }
         }
         

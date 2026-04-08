@@ -124,9 +124,58 @@ fun ChannelSettingsScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // Removed duplicated EightFieldSelector group
+                    // Processing Type Dropdown
+                    var expanded by remember { mutableStateOf(false) }
+                    val processingModes = listOf("NONE", "AVERAGE", "MAX", "MIN", "SUM")
+                    val currentMode = uiState.channel?.chartProcessingType ?: "NONE"
+                    
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = when(currentMode.uppercase()) {
+                                "NONE" -> stringResource(R.string.settings_processing_none)
+                                "MAX" -> stringResource(R.string.settings_processing_max)
+                                "MIN" -> stringResource(R.string.settings_processing_min)
+                                "SUM" -> stringResource(R.string.settings_processing_sum)
+                                else -> stringResource(R.string.settings_processing_average)
+                            },
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.settings_processing_type)) },
+                            trailingIcon = {
+                                IconButton(onClick = { expanded = true }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().clickable { expanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            processingModes.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(when(mode) {
+                                            "NONE" -> stringResource(R.string.settings_processing_none)
+                                            "MAX" -> stringResource(R.string.settings_processing_max)
+                                            "MIN" -> stringResource(R.string.settings_processing_min)
+                                            "SUM" -> stringResource(R.string.settings_processing_sum)
+                                            else -> stringResource(R.string.settings_processing_average)
+                                        })
+                                    },
+                                    onClick = {
+                                        viewModel.updateChartSettings(processingType = mode)
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
 
                 HorizontalDivider()
