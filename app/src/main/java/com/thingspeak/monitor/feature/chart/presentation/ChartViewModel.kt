@@ -11,6 +11,7 @@ import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
 import com.thingspeak.monitor.feature.channel.domain.model.Channel
 import com.thingspeak.monitor.feature.channel.domain.model.FeedEntry
+import com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle
 import com.thingspeak.monitor.feature.channel.domain.usecase.GetChannelFeedUseCase
 import com.thingspeak.monitor.feature.channel.domain.usecase.GetHistoricalDataUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -47,7 +48,7 @@ sealed class ChartDataBundle {
         val timeScale: Float,
         val xAxisMin: Float,
         val xAxisMax: Float,
-        val drawingStyle: com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle = com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.CUBIC,
+        val drawingStyle: LineDrawingStyle = LineDrawingStyle.CUBIC,
         val sampleTimestamps: List<Long> = emptyList(),
         override val timezone: String? = null
     ) : ChartDataBundle()
@@ -59,6 +60,7 @@ sealed class ChartDataBundle {
         val timeScale: Float,
         val xAxisMin: Float,
         val xAxisMax: Float,
+        val isHorizontal: Boolean = false,
         val sampleTimestamps: List<Long> = emptyList(),
         override val timezone: String? = null
     ) : ChartDataBundle()
@@ -309,12 +311,13 @@ class ChartViewModel @Inject constructor(
                     resultsLimit = resultsLimit,
                     baselineXOverride = stableBaselineX,
                     processingType = channel?.chartProcessingType ?: "NONE",
+                    isBarHorizontal = channel?.chartType?.lowercase() == "bar",
                     drawingStyle = when (channel?.chartType?.lowercase()) {
-                        "bar", "column" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.BAR
-                        "area" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.AREA
-                        "scatter" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.SCATTER
-                        "spline", "cubic" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.CUBIC
-                        "step" -> com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.STEPPED
+                        "bar", "column" -> LineDrawingStyle.BAR
+                        "area" -> LineDrawingStyle.AREA
+                        "scatter" -> LineDrawingStyle.SCATTER
+                        "spline", "cubic" -> LineDrawingStyle.CUBIC
+                        "step" -> LineDrawingStyle.STEPPED
                         else -> _drawingStyle.value
                     },
                     timezone = channel?.timezone

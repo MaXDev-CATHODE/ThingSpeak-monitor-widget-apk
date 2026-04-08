@@ -1,0 +1,97 @@
+﻿.\gradlew.bat : WARNING: A restricted method in java.lang.System ha
+s been called
+At line:1 char:1
++ .\gradlew.bat clean :app:compileDebugKotlin --no-daemon *>&1 | Ou
+t-Fi ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: A rest..    .
+has been called:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+WARNING: java.lang.System::load has been called by net.rubygrapefru
+it.platform.internal.NativeLibraryLoader in an unnamed module (file
+:/C:/Users/maksk/.gradle/wrapper/dists/gradle-8.10.2-bin/a04bxjujx9
+5o3nb99gddekhwo/gradle-8.10.2/lib/native-platform-0.22-milestone-26
+.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning 
+for callers in this module
+WARNING: Restricted methods will be blocked in a future release unl
+ess native access is enabled
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.10.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :app:clean
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugBuildConfig FROM-CACHE
+> Task :app:generateDebugResValues FROM-CACHE
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources FROM-CACHE
+> Task :app:mergeDebugResources FROM-CACHE
+> Task :app:packageDebugResources FROM-CACHE
+> Task :app:parseDebugLocalResources FROM-CACHE
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug FROM-CACHE
+> Task :app:processDebugMainManifest FROM-CACHE
+> Task :app:processDebugManifest FROM-CACHE
+> Task :app:processDebugManifestForPackage FROM-CACHE
+> Task :app:processDebugResources FROM-CACHE
+
+> Task :app:kspDebugKotlin FAILED
+e: [ksp] F:/PROJEKTY/ThingSpeak Monitor Widget APK/app/src/main/jav
+a/com/thingspeak/monitor/feature/chart/presentation/components/Date
+AxisFormatter.kt: (43, 20): Function declaration must have a name
+e: Error occurred in KSP, check log for detail
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:43:9 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:43:16 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:43:20 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:82:11 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:82:17 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:82:18 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:82:19 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:82:21 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:82:30 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:82:32 Expecting member declaration
+e: file:///F:/PROJEKTY/ThingSpeak%20Monitor%20Widget%20APK/app/src/
+main/java/com/thingspeak/monitor/feature/chart/presentation/compone
+nts/DateAxisFormatter.kt:86:1 Expecting a top level declaration
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:kspDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerR
+unner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkActio
+n
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 27s
+16 actionable tasks: 5 executed, 11 from cache

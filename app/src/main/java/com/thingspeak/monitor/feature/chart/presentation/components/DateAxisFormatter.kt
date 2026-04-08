@@ -42,7 +42,13 @@ class DateAxisFormatter(
 
     override fun getFormattedValue(value: Float): String {
         return try {
-            val seconds = value.toLong() + baselineX
+            val seconds = if (timeScale == 0f) {
+                // Index-based (grouped bars)
+                val idx = value.toInt()
+                if (idx in sampleTimestamps.indices) sampleTimestamps[idx] else (value.toLong() + baselineX)
+            } else {
+                value.toLong() + baselineX
+            }
             
             // Determine visible range in seconds to choose format
             val visibleSeconds = chart?.let { (it.visibleXRange).toLong() } 

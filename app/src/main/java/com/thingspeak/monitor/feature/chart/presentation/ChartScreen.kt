@@ -316,6 +316,7 @@ fun ChartScreen(
                                         timeScale = bundle.timeScale,
                                         xAxisMin = bundle.xAxisMin,
                                         xAxisMax = bundle.xAxisMax,
+                                        isHorizontal = bundle.isHorizontal,
                                         sampleTimestamps = bundle.sampleTimestamps,
                                         timezone = bundle.timezone,
                                         modifier = Modifier.fillMaxSize()
@@ -463,6 +464,7 @@ fun ChartCard(
                             timeScale = bundle.timeScale,
                             xAxisMin = bundle.xAxisMin,
                             xAxisMax = bundle.xAxisMax,
+                            isHorizontal = bundle.isHorizontal,
                             sampleTimestamps = bundle.sampleTimestamps,
                             timezone = bundle.timezone,
                             onInteraction = onInteraction,

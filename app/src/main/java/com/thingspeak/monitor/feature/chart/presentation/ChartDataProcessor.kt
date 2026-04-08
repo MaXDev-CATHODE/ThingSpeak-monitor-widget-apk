@@ -23,14 +23,15 @@ object ChartDataProcessor {
         isMergingEnabled: Boolean,
         isNormalized: Boolean,
         fieldNames: Map<Int, String>,
-        drawingStyle: LineDrawingStyle = LineDrawingStyle.CUBIC,
         chartColor: String? = null,
         fieldColorsMap: Map<Int, String> = emptyMap(),
-        now: Instant = Instant.now(),
+        now: java.time.Instant = java.time.Instant.now(),
         resultsLimit: Int = 60,
         baselineXOverride: Long? = null,
         timezone: String? = null,
-        processingType: String = "NONE"
+        processingType: String = "NONE",
+        isBarHorizontal: Boolean = false,
+        drawingStyle: LineDrawingStyle = LineDrawingStyle.CUBIC
     ): List<ChartDataBundle> {
         if (feeds.isEmpty()) return emptyList()
 
@@ -61,37 +62,41 @@ object ChartDataProcessor {
 
         fun safeParseColor(colorStr: String): Int {
             return try {
-                if (colorStr.startsWith("#")) {
-                    val color = colorStr.substring(1).toLong(16)
-                    if (colorStr.length == 7) (0xFF000000 or color).toInt() else color.toInt()
-                } else {
-                    0xFF000000.toInt() // Default to black
+                val cleaned = colorStr.trim().removePrefix("#")
+                when {
+                    cleaned.length == 3 -> {
+                        // Expand shorthand #RGB to #RRGGBB
+                        val r = cleaned[0]; val g = cleaned[1]; val b = cleaned[2]
+                        android.graphics.Color.parseColor("#FF$r$r$g$g$b$b")
+                    }
+                    cleaned.length == 6 -> {
+                        android.graphics.Color.parseColor("#FF$cleaned")
+                    }
+                    cleaned.length == 8 -> {
+                        android.graphics.Color.parseColor("#$cleaned")
+                    }
+                    else -> android.graphics.Color.BLACK
                 }
             } catch (e: Exception) {
-                0xFF000000.toInt()
+                android.graphics.Color.BLACK
             }
         }
 
         // 2. Fixed Axis Range Calculation (MANDATORY for 1D, 7D, 30D)
-        // Adjust endTime to be at least the latest feed timestamp to prevent filtering out latest data (Agent 3.7.10)
         val latestFeedTime = feedByTimestamp.lastOrNull()?.first ?: now.epochSecond
         val endTime = maxOf(now.epochSecond, latestFeedTime)
         val startTime = endTime - (currentRangeDays.toLong() * 86400L)
         
-        // USE START_TIME as baselineX for PERFECT coordinate alignment (Agent 3.7.6)
         val baselineX = startTime 
-        val timeScale = 1.0f // Always use seconds
+        val timeScale = 1.0f 
         
         val minXDelta = 0.0f
         val maxXDelta = (endTime - startTime).toFloat()
 
-        // 3. Optimized Time-Bucket Sampling O(N) - (Agent 3.7.9 PERFORMANCE)
+        // 3. Optimized Time-Bucket Sampling
         val targetCount = if (resultsLimit <= 0) 60 else resultsLimit
         val bucketSizeSeconds = (endTime - startTime).toDouble() / targetCount
         
-        android.util.Log.d("TS_DEBUG", "Processing $currentRangeDays days for $targetCount buckets. Range: [$startTime - $endTime]. BucketSize: $bucketSizeSeconds s")
-
-        // Pre-allocate buckets to avoid O(M*N) filter overhead
         val buckets = Array(targetCount) { mutableListOf<Pair<Long, FeedEntry>>() }
         for (item in feedByTimestamp) {
             val ts = item.first
@@ -100,18 +105,12 @@ object ChartDataProcessor {
             buckets[bucketIndex].add(item)
         }
 
-        var dataBucketCount = 0
-        var zeroBucketCount = 0
-
         val processedContext = if (processingType.uppercase() == "NONE" && feedByTimestamp.size <= 1000) {
-            // NO PROCESSING: Use raw feeds directly for maximum fidelity
-            android.util.Log.i("TS_DEBUG", "ProcessingType=NONE: Using raw feeds (${feedByTimestamp.size} points)")
             feedByTimestamp
         } else {
             (0 until targetCount).mapNotNull { i ->
                 val bucketFeeds = buckets[i]
                 if (bucketFeeds.isNotEmpty()) {
-                    dataBucketCount++
                     val representativeFeed = bucketFeeds.last()
                     val actualTs = representativeFeed.first
                     
@@ -125,31 +124,30 @@ object ChartDataProcessor {
                                 "MAX" -> values.maxOrNull()
                                 "MIN" -> values.minOrNull()
                                 "SUM" -> values.sum()
-                                else -> values.average() // Default to AVERAGE
+                                else -> values.average() 
                             }
                             resultValue?.toString()
                         }.filterValues { it != null } as Map<Int, String>
                     )
                     actualTs to processedFeed
-                } else {
-                    zeroBucketCount++
-                    null
-                }
+                } else null
             }
-        }
-        
-        android.util.Log.i("TS_DEBUG", "Bucket stats: DataBuckets=$dataBucketCount, ZeroBuckets=$zeroBucketCount (Total=$targetCount)")
-        if (dataBucketCount > 0) {
-           val firstData = feedByTimestamp.first().first
-           val lastData = feedByTimestamp.last().first
-           android.util.Log.d("TS_DEBUG", "Data Range: $firstData to $lastData | Chart Range: $startTime to $endTime")
         }
 
         if (drawingStyle == LineDrawingStyle.BAR) {
             return processBarCharts(
-                processedContext, activeFields, 
-                isMergingEnabled, isNormalized, fieldNames, baselineX, 
-                timeScale, minXDelta, maxXDelta, timezone, { idx -> safeParseColor(getColorForField(idx)) }
+                context = processedContext,
+                activeFields = activeFields,
+                isMergingEnabled = isMergingEnabled,
+                isNormalized = isNormalized,
+                fieldNames = fieldNames,
+                baselineX = baselineX,
+                timeScale = timeScale,
+                minX = minXDelta,
+                maxX = maxXDelta,
+                isHorizontal = isBarHorizontal,
+                timezone = timezone,
+                colorProvider = { idx -> safeParseColor(getColorForField(idx)) }
             )
         }
 
@@ -170,26 +168,18 @@ object ChartDataProcessor {
         timeScale: Float,
         minX: Float,
         maxX: Float,
+        isHorizontal: Boolean,
         timezone: String?,
         colorProvider: (Int) -> Int
     ): List<ChartDataBundle> {
+        if (context.isEmpty()) return emptyList()
         val timestamps = context.map { it.first }
-        // Agent 3.7.6: Calculate a stable bar width based on bucket size.
-        val dynamicBarWidth = if (context.size > 1) {
-            val totalTimeRange = maxX - minX
-            val avgGap = totalTimeRange / (context.size)
-            0.8f * avgGap 
-        } else 0.8f
 
-        val padding = (dynamicBarWidth * 1.5f).coerceAtMost(300f / timeScale) 
-        val bundleMinX = minX - padding
-        val bundleMaxX = maxX + padding
-
-        if (isMergingEnabled) {
+        if (isMergingEnabled && activeFields.size > 1) {
+            // Grouped bars require index-based X axis for stability
             val dataSets = activeFields.mapNotNull { fieldIndex ->
-                val entries = context.map { (ts, feed) ->
-                    val xVal = (ts - baselineX).toFloat() / timeScale
-                    BarEntry(xVal, feed.fields[fieldIndex]?.toFloatOrNull() ?: 0f)
+                val entries = context.mapIndexed { index, (ts, feed) ->
+                    BarEntry(index.toFloat(), feed.fields[fieldIndex]?.toFloatOrNull() ?: 0f)
                 }
                 if (entries.isEmpty()) return@mapNotNull null
                 
@@ -200,8 +190,44 @@ object ChartDataProcessor {
                 set
             }
             if (dataSets.isEmpty()) return emptyList()
-            return listOf(ChartDataBundle.Bar("Merged Bars", BarData(dataSets).apply { barWidth = dynamicBarWidth }, baselineX, timeScale, bundleMinX, bundleMaxX, timestamps, timezone))
+
+            val barData = BarData(dataSets)
+            val groupCount = context.size
+            val dataSetCount = dataSets.size
+            
+            // Standard MPAndroidChart grouping formula: (barWidth + barSpace) * dataSetCount + groupSpace = 1.00
+            val barWidth = 0.25f
+            val barSpace = 0.05f
+            val groupSpace = 1.0f - (barWidth + barSpace) * dataSetCount
+            
+            barData.barWidth = barWidth
+            barData.groupBars(0f, groupSpace.coerceAtLeast(0.01f), barSpace)
+
+            // Adjust bounds for index-based axis
+            val bundleMinX = 0f
+            val bundleMaxX = groupCount.toFloat()
+
+            return listOf(ChartDataBundle.Bar(
+                title = "Merged Bars",
+                barData = barData,
+                baselineX = baselineX, // Not used for X value calculation but kept for metadata
+                timeScale = 0f,        // 0f signals index-based formatting
+                xAxisMin = bundleMinX,
+                xAxisMax = bundleMaxX,
+                isHorizontal = isHorizontal,
+                sampleTimestamps = timestamps,
+                timezone = timezone
+            ))
         } else {
+            // Single field or non-merged: stay with epoch-based for smooth scrolling
+            val dynamicBarWidth = if (context.size > 1) {
+                0.8f * (maxX - minX) / context.size
+            } else 0.8f
+
+            val padding = (dynamicBarWidth * 1.5f).coerceAtMost(300f) 
+            val bundleMinX = minX - padding
+            val bundleMaxX = maxX + padding
+
             return activeFields.mapNotNull { fieldIndex ->
                 val entries = context.map { (ts, feed) ->
                     val xVal = (ts - baselineX).toFloat() / timeScale
@@ -213,7 +239,18 @@ object ChartDataProcessor {
                 val set = BarDataSet(finalEntries, fieldNames[fieldIndex] ?: "Field $fieldIndex")
                 set.color = colorProvider(fieldIndex)
                 set.setDrawValues(false)
-                ChartDataBundle.Bar(fieldNames[fieldIndex] ?: "Field $fieldIndex", BarData(set).apply { barWidth = dynamicBarWidth }, baselineX, timeScale, bundleMinX, bundleMaxX, timestamps, timezone)
+                
+                ChartDataBundle.Bar(
+                    title = fieldNames[fieldIndex] ?: "Field $fieldIndex",
+                    barData = BarData(set).apply { barWidth = dynamicBarWidth },
+                    baselineX = baselineX,
+                    timeScale = timeScale,
+                    xAxisMin = bundleMinX,
+                    xAxisMax = bundleMaxX,
+                    isHorizontal = isHorizontal,
+                    sampleTimestamps = timestamps,
+                    timezone = timezone
+                )
             }
         }
     }

@@ -102,6 +102,12 @@ android {
 
 
 
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
+
     lint {
         abortOnError = false
         warningsAsErrors = false

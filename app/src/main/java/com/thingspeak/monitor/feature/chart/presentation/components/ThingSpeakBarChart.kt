@@ -25,6 +25,7 @@ fun ThingSpeakBarChart(
     timeScale: Float = 1f,
     xAxisMin: Float,
     xAxisMax: Float,
+    isHorizontal: Boolean = false,
     sampleTimestamps: List<Long> = emptyList(),
     timezone: String? = null,
     onInteraction: (isActive: Boolean) -> Unit = {},
@@ -42,14 +43,19 @@ fun ThingSpeakBarChart(
             timezone = timezone
         ) 
     }
-    var chartView by remember { mutableStateOf<BarChart?>(null) }
+    var chartView by remember { mutableStateOf<com.github.mikephil.charting.charts.BarChart?>(null) }
     var lastDataHash by remember { mutableStateOf(0) }
     val persistentMatrix = remember { android.graphics.Matrix() }
 
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
-            BarChart(context).apply {
+            val chart = if (isHorizontal) {
+                com.github.mikephil.charting.charts.HorizontalBarChart(context)
+            } else {
+                com.github.mikephil.charting.charts.BarChart(context)
+            }
+            chart.apply {
                 setOnTouchListener { v, event ->
                     when (event.action) {
                         MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
@@ -94,9 +100,9 @@ fun ThingSpeakBarChart(
                     setAvoidFirstLastClipping(false)
                     setDrawGridLines(true)
                     this.axisMinimum = xAxisMin
-                    this.axisMaximum = xAxisMax
+                    this.axisMaximum = if (timeScale == 0f) xAxisMax - 0.5f else xAxisMax
                     this.gridColor = gridColor
-                    position = XAxis.XAxisPosition.BOTTOM
+                    position = if (isHorizontal) XAxis.XAxisPosition.BOTTOM_INSIDE else XAxis.XAxisPosition.BOTTOM
                 }
                 
                 axisLeft.apply {
@@ -160,7 +166,7 @@ fun ThingSpeakBarChart(
 
                 chart.xAxis.apply {
                     axisMinimum = xAxisMin
-                    axisMaximum = xAxisMax
+                    axisMaximum = if (timeScale == 0f) xAxisMax - 0.5f else xAxisMax
                 }
                 
                 chart.data = barData
