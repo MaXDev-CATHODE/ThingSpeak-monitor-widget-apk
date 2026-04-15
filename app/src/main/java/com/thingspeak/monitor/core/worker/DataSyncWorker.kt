@@ -80,7 +80,9 @@ class DataSyncWorker @AssistedInject constructor(
                     android.util.Log.v("TS_DEBUG", "syncChannel: Generating chart for ${channel.id}...")
                     val chartBitmap = WidgetChartGenerator.generateSimpleChart(
                         entries = entries.reversed(),
-                        fieldIndices = channel.preferredChartFields?.ifEmpty { null } ?: setOf(1),
+                        fieldIndices = channel.preferredChartFields?.ifEmpty { null }
+                            ?: channel.widgetVisibleFields?.ifEmpty { null }
+                            ?: setOf(1),
                         isNormalized = channel.isNormalized,
                         fieldColorsOverride = channel.fieldColors
                     )

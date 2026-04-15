@@ -42,31 +42,31 @@ object ChartSafeguards {
         }
         
         // 2. Line thickness and character (Safeguard #2, #3, #6)
-        set.lineWidth = 2.8f
+        set.lineWidth = 1.5f
         set.color = color
         
         when (style) {
             com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.LINEAR -> {
                 set.mode = LineDataSet.Mode.LINEAR
                 set.setDrawFilled(false)
-                set.lineWidth = 2.8f
+                set.lineWidth = 1.5f
             }
             com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.STEPPED -> {
                 set.mode = LineDataSet.Mode.STEPPED
                 set.setDrawFilled(false)
-                set.lineWidth = 2.8f
+                set.lineWidth = 1.5f
             }
             com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.CUBIC -> {
                 set.mode = LineDataSet.Mode.CUBIC_BEZIER
                 set.cubicIntensity = 0.12f
                 set.setDrawFilled(false)
-                set.lineWidth = 2.8f
+                set.lineWidth = 1.5f
             }
             com.thingspeak.monitor.feature.chart.presentation.model.LineDrawingStyle.AREA -> {
                 set.mode = LineDataSet.Mode.CUBIC_BEZIER
                 set.cubicIntensity = 0.12f
                 set.setDrawFilled(true)
-                set.lineWidth = 2.8f
+                set.lineWidth = 1.5f
                 
                 val gradient = android.graphics.drawable.GradientDrawable(
                     android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
