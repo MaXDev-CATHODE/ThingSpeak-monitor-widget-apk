@@ -74,28 +74,6 @@ class DataSyncWorker @AssistedInject constructor(
 
             // 1. Generate chart bitmap (only if we have entries)
             val entries = repository.observeFeed(channel.id).first()
-            var chartBase64: String? = null
-            if (entries.isNotEmpty()) {
-                try {
-                    android.util.Log.v("TS_DEBUG", "syncChannel: Generating chart for ${channel.id}...")
-                    val chartBitmap = WidgetChartGenerator.generateSimpleChart(
-                        entries = entries.reversed(),
-                        fieldIndices = channel.preferredChartFields?.ifEmpty { null }
-                            ?: channel.widgetVisibleFields?.ifEmpty { null }
-                            ?: setOf(1),
-                        isNormalized = channel.isNormalized,
-                        fieldColorsOverride = channel.fieldColors
-                    )
-                    
-                    if (chartBitmap != null) {
-                        val stream = java.io.ByteArrayOutputStream()
-                        chartBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, stream)
-                        chartBase64 = android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.DEFAULT)
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.w("TS_DEBUG", "syncChannel: Chart FAILED for ${channel.id}", e)
-                }
-            }
 
             // 2. Update bound widgets
             val manager = GlanceAppWidgetManager(applicationContext)
@@ -108,6 +86,51 @@ class DataSyncWorker @AssistedInject constructor(
                     val appWidgetId = manager.getAppWidgetId(id)
                     val boundId = bindingRepo.getBindingSync(appWidgetId)
                     if (boundId == channel.id) {
+                        // Resolve fieldIndices per-widget: read visible_fields from widget DataStore
+                        val widgetVisibleFieldsFromPrefs: Set<Int>? = if (widgetClass == ThingSpeakGlanceWidget::class.java) {
+                            try {
+                                val prefs = androidx.glance.appwidget.state.getAppWidgetState(
+                                    applicationContext,
+                                    com.thingspeak.monitor.feature.widget.WidgetPreferencesStateDefinition,
+                                    id
+                                )
+                                prefs[androidx.datastore.preferences.core.stringSetPreferencesKey("visible_fields")]
+                                    ?.mapNotNull { it.toIntOrNull() }
+                                    ?.toSet()
+                                    ?.ifEmpty { null }
+                            } catch (e: Exception) {
+                                android.util.Log.w("TS_DEBUG", "syncChannel: Failed to read visible_fields for widget $id", e)
+                                null
+                            }
+                        } else null
+
+                        // Priority chain: preferredChartFields > DataStore visible_fields > widgetVisibleFields > setOf(1)
+                        val fieldIndices = channel.preferredChartFields?.ifEmpty { null }
+                            ?: widgetVisibleFieldsFromPrefs
+                            ?: channel.widgetVisibleFields?.ifEmpty { null }
+                            ?: setOf(1)
+
+                        // Generate chart bitmap per-widget (only for ThingSpeakGlanceWidget)
+                        val chartBase64: String? = if (widgetClass == ThingSpeakGlanceWidget::class.java && entries.isNotEmpty()) {
+                            try {
+                                android.util.Log.v("TS_DEBUG", "syncChannel: Generating chart for widget $id, fields=$fieldIndices")
+                                val chartBitmap = WidgetChartGenerator.generateSimpleChart(
+                                    entries = entries.reversed(),
+                                    fieldIndices = fieldIndices,
+                                    isNormalized = channel.isNormalized,
+                                    fieldColorsOverride = channel.fieldColors
+                                )
+                                if (chartBitmap != null) {
+                                    val stream = java.io.ByteArrayOutputStream()
+                                    chartBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, stream)
+                                    android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.DEFAULT)
+                                } else null
+                            } catch (e: Exception) {
+                                android.util.Log.w("TS_DEBUG", "syncChannel: Chart FAILED for widget $id", e)
+                                null
+                            }
+                        } else null
+
                         com.thingspeak.monitor.feature.widget.WidgetUpdateHelper.updateWidgetPreferences(
                             context = applicationContext,
                             glanceId = id,

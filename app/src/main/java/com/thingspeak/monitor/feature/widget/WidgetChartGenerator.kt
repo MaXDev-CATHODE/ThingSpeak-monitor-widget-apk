@@ -109,8 +109,14 @@ object WidgetChartGenerator {
             val (minVal, maxVal) = resolveSeriesScale(dataPoints, isNormalized, globalMin, globalMax)
             val range = (maxVal - minVal).coerceAtLeast(0.1)
 
+            val parsedColor = try {
+                Color.parseColor(colorStr)
+            } catch (e: Exception) {
+                android.util.Log.w("TS_DEBUG", "WidgetChartGenerator: Invalid color '$colorStr', using gray", e)
+                Color.GRAY
+            }
             val paint = Paint().apply {
-                color = Color.parseColor(colorStr)
+                color = parsedColor
                 strokeWidth = 3f
                 style = Paint.Style.STROKE
                 isAntiAlias = true

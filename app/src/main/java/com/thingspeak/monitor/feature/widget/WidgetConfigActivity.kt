@@ -168,6 +168,9 @@ class WidgetConfigActivity : ComponentActivity() {
                             this[booleanPreferencesKey("is_glass")] = isGlass
                             this[intPreferencesKey("chart_results")] = chartResultsCount
                             this[stringSetPreferencesKey("visible_fields")] = widgetVisibleFields.map { it.toString() }.toSet()
+                            // Clear stale chart bitmap so widget shows "Loading Chart..." until
+                            // DataSyncWorker generates a fresh one for the newly selected channel
+                            this.remove(stringPreferencesKey("chart_bitmap"))
                         }
                     }
                 }
