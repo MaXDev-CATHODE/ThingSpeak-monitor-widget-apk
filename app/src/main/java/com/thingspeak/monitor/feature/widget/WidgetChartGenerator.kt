@@ -9,10 +9,64 @@ import com.thingspeak.monitor.feature.channel.domain.model.FeedEntry
  */
 object WidgetChartGenerator {
 
+    /**
+     * Resolves the Y-axis scale (minVal, maxVal) for a single series.
+     *
+     * When [isNormalized] is true (per-series scaling), each series is scaled
+     * independently to its own data range, so all trends are equally visible
+     * regardless of absolute value differences between sensors.
+     *
+     * When [isNormalized] is false (global scaling), [globalMin]/[globalMax]
+     * are used – all series share the same axis, which compresses series with
+     * smaller absolute values.
+     *
+     * Extracted as an internal function to allow unit testing without Android
+     * Bitmap/Canvas dependencies.
+     */
+    internal fun resolveSeriesScale(
+        dataPoints: List<Double>,
+        isNormalized: Boolean,
+        globalMin: Double,
+        globalMax: Double
+    ): Pair<Double, Double> {
+        val minVal = if (isNormalized) (dataPoints.minOrNull() ?: 0.0) else globalMin
+        val maxVal = if (isNormalized) (dataPoints.maxOrNull() ?: 1.0) else globalMax
+        return Pair(minVal, maxVal)
+    }
+
+    /**
+     * Computes the global Y-axis range across all requested field series.
+     * Used only when [isNormalized] = false.
+     *
+     * Extracted as an internal function to allow unit testing without Android
+     * Bitmap/Canvas dependencies.
+     */
+    internal fun computeGlobalRange(
+        entries: List<FeedEntry>,
+        fieldIndices: Set<Int>
+    ): Pair<Double, Double> {
+        var globalMin = Double.MAX_VALUE
+        var globalMax = -Double.MAX_VALUE
+        for (entry in entries) {
+            fieldIndices.forEach { fieldIdx ->
+                val v = entry.fields[fieldIdx]?.toDoubleOrNull()
+                if (v != null) {
+                    if (v < globalMin) globalMin = v
+                    if (v > globalMax) globalMax = v
+                }
+            }
+        }
+        if (globalMin == Double.MAX_VALUE) globalMin = 0.0
+        if (globalMax == -Double.MAX_VALUE) globalMax = 1.0
+        // Add slight padding to Y range to avoid lines touching edges
+        val padding = (globalMax - globalMin) * 0.05
+        return Pair(globalMin - padding, globalMax + padding)
+    }
+
     fun generateSimpleChart(
         entries: List<FeedEntry>,
         fieldIndices: Set<Int>,
-        isNormalized: Boolean = false,
+        isNormalized: Boolean = true,
         width: Int = 400,
         height: Int = 150,
         bgColor: Int = Color.TRANSPARENT,
@@ -31,27 +85,11 @@ object WidgetChartGenerator {
             "#4CAF50", "#2196F3", "#F44336", "#FFEB3B",
             "#9C27B0", "#FF9800", "#00BCD4", "#E91E63"
         )
-        
-        var globalMin = Double.MAX_VALUE
-        var globalMax = -Double.MAX_VALUE
-        if (!isNormalized) {
-            for (entry in entries) {
-                // Only consider fields that are actually being drawn
-                fieldIndices.forEach { fieldIdx ->
-                    val v = entry.fields[fieldIdx]?.toDoubleOrNull()
-                    if (v != null) {
-                        if (v < globalMin) globalMin = v
-                        if (v > globalMax) globalMax = v
-                    }
-                }
-            }
-            if (globalMin == Double.MAX_VALUE) globalMin = 0.0
-            if (globalMax == -Double.MAX_VALUE) globalMax = 1.0
-            
-            // Add slight padding to Y range to avoid lines touching edges
-            val padding = (globalMax - globalMin) * 0.05
-            globalMin -= padding
-            globalMax += padding
+
+        val (globalMin, globalMax) = if (!isNormalized) {
+            computeGlobalRange(entries, fieldIndices)
+        } else {
+            Pair(0.0, 1.0) // unused when isNormalized=true
         }
 
         fieldIndices.sorted().forEach { fieldIdx ->
@@ -68,9 +106,7 @@ object WidgetChartGenerator {
                 rawDataPoints
             }
 
-            val minVal = if (isNormalized) (dataPoints.minOrNull() ?: 0.0) else globalMin
-            val maxVal = if (isNormalized) (dataPoints.maxOrNull() ?: 1.0) else globalMax
-            
+            val (minVal, maxVal) = resolveSeriesScale(dataPoints, isNormalized, globalMin, globalMax)
             val range = (maxVal - minVal).coerceAtLeast(0.1)
 
             val paint = Paint().apply {

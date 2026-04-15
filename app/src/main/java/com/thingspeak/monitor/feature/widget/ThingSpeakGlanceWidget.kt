@@ -170,12 +170,45 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
         
         val prefs = androidx.glance.appwidget.state.getAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId)
         val chartResults = prefs[androidx.datastore.preferences.core.intPreferencesKey("chart_results")] ?: 60
-        
+
+        // Generate chart bitmap for self-healing path (mirrors DataSyncWorker.syncChannel logic)
+        var chartBase64: String? = null
+        var feedEntries: List<com.thingspeak.monitor.feature.channel.domain.model.FeedEntry> = emptyList()
+        try {
+            repo.observeFeed(channelId).take(1).collect { entries ->
+                feedEntries = entries
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("TS_DEBUG", "updateAppWidget: Failed to load feed entries", e)
+        }
+        if (feedEntries.isNotEmpty()) {
+            try {
+                val chartBitmap = WidgetChartGenerator.generateSimpleChart(
+                    entries = feedEntries.reversed(),
+                    fieldIndices = channelToUse.preferredChartFields?.ifEmpty { null }
+                        ?: channelToUse.widgetVisibleFields?.ifEmpty { null }
+                        ?: setOf(1),
+                    isNormalized = true,
+                    fieldColorsOverride = channelToUse.fieldColors
+                )
+                if (chartBitmap != null) {
+                    val stream = java.io.ByteArrayOutputStream()
+                    chartBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, stream)
+                    chartBase64 = android.util.Base64.encodeToString(
+                        stream.toByteArray(), android.util.Base64.DEFAULT
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("TS_DEBUG", "updateAppWidget: Chart generation failed", e)
+            }
+        }
+
         WidgetUpdateHelper.updateWidgetPreferences(
             context = context, 
             glanceId = glanceId, 
             channel = channelToUse.copy(chartResults = chartResults), 
             latestFeed = latestFeed,
+            chartBitmapBase64 = chartBase64,
             violatedMinFields = violations.filter { it.condition == "LESS_THAN" }.map { it.fieldNumber }.toSet(),
             violatedMaxFields = violations.filter { it.condition == "GREATER_THAN" }.map { it.fieldNumber }.toSet(),
             minSetFields = widgetRules.filter { it.condition == "LESS_THAN" && it.isEnabled }.map { it.fieldNumber }.toSet(),
