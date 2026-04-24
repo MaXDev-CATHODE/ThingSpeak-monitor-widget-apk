@@ -1,5 +1,7 @@
 package com.thingspeak.monitor.feature.widget
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidget
@@ -7,9 +9,11 @@ import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.provideContent
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.appwidget.state.updateAppWidgetState
-import dagger.hilt.android.EntryPointAccessors
+import androidx.work.WorkManager
 import com.thingspeak.monitor.core.di.WidgetEntryPoint
 import com.thingspeak.monitor.core.datastore.SavedChannel
+import com.thingspeak.monitor.core.worker.DataSyncWorker
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.collect
 
@@ -157,4 +161,37 @@ class ValueGridWidget : GlanceAppWidget() {
 
 class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = ValueGridWidget()
+
+    override fun onEnabled(context: Context) {
+        super.onEnabled(context)
+        // Schedule periodic WorkManager job when the first ValueGridWidget is added,
+        // mirroring the behavior of WidgetReceiver.onEnabled().
+        WidgetReceiver.enqueuePeriodicRefresh(context)
+        android.util.Log.i("ValueGridWidgetReceiver", "First ValueGridWidget added — periodic refresh enqueued")
+    }
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        super.onDeleted(context, appWidgetIds)
+        android.util.Log.i("ValueGridWidgetReceiver", "onDeleted: ids=${appWidgetIds.joinToString()}")
+
+        val manager = AppWidgetManager.getInstance(context)
+
+        // Check remaining active ThingSpeakGlanceWidget instances
+        val remainingGlanceWidgets = manager.getAppWidgetIds(
+            ComponentName(context, WidgetReceiver::class.java)
+        )
+        // Check remaining active ValueGridWidget instances
+        val remainingValueGridWidgets = manager.getAppWidgetIds(
+            ComponentName(context, ValueGridWidgetReceiver::class.java)
+        )
+
+        // Cancel periodic work only when no widgets of either type remain active
+        if (remainingGlanceWidgets.isEmpty() && remainingValueGridWidgets.isEmpty()) {
+            WorkManager.getInstance(context).cancelUniqueWork(DataSyncWorker.WORK_NAME)
+            android.util.Log.w(
+                "ValueGridWidgetReceiver",
+                "Last widget of any type removed — periodic refresh cancelled"
+            )
+        }
+    }
 }

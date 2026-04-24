@@ -187,13 +187,31 @@ class DataSyncWorker @AssistedInject constructor(
     companion object {
         private const val TAG = "DataSyncWorker"
         fun constraints(): Constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        
+        /**
+         * Schedule periodic data sync with KEEP policy to avoid resetting the timer.
+         * Use this for routine scheduling (widget lifecycle, boot receiver).
+         */
         fun schedule(context: Context, intervalMinutes: Long) {
+            val request = PeriodicWorkRequestBuilder<DataSyncWorker>(intervalMinutes, TimeUnit.MINUTES)
+                .setConstraints(constraints())
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, WorkRequest.MIN_BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
+                .build()
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+        }
+        
+        /**
+         * Schedule periodic data sync with UPDATE policy to apply new interval immediately.
+         * Use this when user changes sync interval in settings.
+         */
+        fun scheduleWithUpdate(context: Context, intervalMinutes: Long) {
             val request = PeriodicWorkRequestBuilder<DataSyncWorker>(intervalMinutes, TimeUnit.MINUTES)
                 .setConstraints(constraints())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, WorkRequest.MIN_BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
+        
         const val WORK_NAME = "DataSyncWorker"
         fun runOnce(context: Context) {
             val request = OneTimeWorkRequestBuilder<DataSyncWorker>().setConstraints(constraints()).build()
