@@ -81,7 +81,10 @@ class SettingsViewModel @Inject constructor(
     fun setSyncInterval(context: android.content.Context, minutes: Long) {
         viewModelScope.launch {
             appPreferences.setSyncInterval(minutes)
-            // Use UPDATE policy here to apply the new interval immediately
+            // Immediately trigger a one-time sync so widgets refresh without waiting
+            // for the full new interval to elapse after the change.
+            com.thingspeak.monitor.core.worker.DataSyncWorker.runOnce(context)
+            // Then reschedule the periodic worker with the new interval (UPDATE resets the timer).
             com.thingspeak.monitor.core.worker.DataSyncWorker.scheduleWithUpdate(context, minutes)
             appPreferences.setIsWorkerScheduled(true)
         }
