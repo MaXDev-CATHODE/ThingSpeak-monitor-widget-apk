@@ -14,8 +14,10 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -95,11 +97,17 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
         private const val TAG = "WidgetReceiver"
 
         fun enqueuePeriodicRefresh(context: Context) {
-            // Direct scheduling with default interval to avoid confusion in periodic work naming.
-            // The actual interval will be fetched in DataSyncWorker anyway, but we ensure
-            // that the WorkManager dependency chain is correct.
-            com.thingspeak.monitor.core.worker.DataSyncWorker.schedule(context, 30L)
-            android.util.Log.i(TAG, "periodic refresh enqueued directly via DataSyncWorker")
+            // Read the user-configured sync interval from AppPreferences via EntryPointAccessors,
+            // following the same pattern used in RescheduleWorker.doWork().
+            CoroutineScope(Dispatchers.IO).launch {
+                val entryPoint = EntryPointAccessors.fromApplication(
+                    context.applicationContext,
+                    com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
+                )
+                val intervalMinutes = entryPoint.appPreferences().observeSyncInterval().first()
+                com.thingspeak.monitor.core.worker.DataSyncWorker.schedule(context, intervalMinutes)
+                android.util.Log.i(TAG, "periodic refresh enqueued with interval=$intervalMinutes min")
+            }
         }
     }
 }
