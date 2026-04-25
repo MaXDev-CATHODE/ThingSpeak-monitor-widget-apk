@@ -52,6 +52,11 @@ class ChannelRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getLatestFeedEntry(channelId: Long): FeedEntry? =
+        withContext(ioDispatcher) {
+            feedDao.getLatestEntry(channelId)?.toDomain()
+        }
+
     override fun observeChannelList(): Flow<List<Channel>> {
         return channelPrefs.observe().map { channels ->
             channels.map { it.toDomain() }
