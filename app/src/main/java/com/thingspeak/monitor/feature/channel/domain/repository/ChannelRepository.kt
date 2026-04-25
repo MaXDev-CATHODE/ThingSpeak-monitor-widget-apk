@@ -14,6 +14,12 @@ interface ChannelRepository {
     /** Observes channel feed entries as a reactive [Flow] stream, offline-first. */
     fun observeFeed(channelId: Long): Flow<List<FeedEntry>>
 
+    /**
+     * Returns the latest feed entry directly from Room (point-in-time, no Flow race condition).
+     * Use this after [refreshFeed] to guarantee reading post-upsert data.
+     */
+    suspend fun getLatestFeedEntry(channelId: Long): FeedEntry?
+
     /** Observes the list of all saved channels. */
     fun observeChannelList(): Flow<List<com.thingspeak.monitor.feature.channel.domain.model.Channel>>
 

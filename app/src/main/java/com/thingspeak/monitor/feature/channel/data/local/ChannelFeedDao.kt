@@ -34,6 +34,14 @@ interface ChannelFeedDao {
     fun observeLastEntry(channelId: Long): Flow<List<FeedEntryEntity>>
 
     /**
+     * Point-in-time query: returns the latest entry directly from Room after upsert completes.
+     * Unlike Flow-based queries, this suspend function guarantees reading post-transaction data,
+     * eliminating the race condition where observeFeed().firstOrNull() may return a stale buffer.
+     */
+    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId ORDER BY entryId DESC LIMIT 1")
+    suspend fun getLatestEntry(channelId: Long): FeedEntryEntity?
+
+    /**
      * Inserts a list of entries into the database. Overwrites on conflict.
      */
     @Transaction

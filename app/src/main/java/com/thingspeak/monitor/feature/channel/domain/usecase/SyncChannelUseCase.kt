@@ -46,7 +46,10 @@ class SyncChannelUseCase @Inject constructor(
 
             // 2. Load latest data
             val entries = repository.observeFeed(channel.id).firstOrNull() ?: emptyList()
-            val latestEntry = entries.firstOrNull() ?: FeedEntry(0L, "—", emptyMap())
+            // Use a direct suspend query instead of entries.firstOrNull() to avoid a race condition
+            // where observeFeed().firstOrNull() may return a stale Flow buffer emission from before
+            // the upsert completed, causing the widget to display an outdated "Measured: HH:mm".
+            val latestEntry = repository.getLatestFeedEntry(channel.id) ?: FeedEntry(0L, "—", emptyMap())
             
             val lastProcessedId = channel.lastProcessedEntryId
             val newEntries = entries.filter { it.entryId > lastProcessedId }

@@ -17,6 +17,8 @@ captures/
 google-services.json
 .gitlab-ci.yml
 build_release.bat
+docs/
+.kiro/
 
 # --- Pliki binarne i klucze podpisywania ---
 *.jks
@@ -30,3 +32,14 @@ Thumbs.db
 
 # --- Logi ---
 *.log
+build_errors_2.txt
+build_errors.txt
+build_out.txt
+.kiro/specs/glance-widget-chart-fixes/.config.kiro
+.kiro/specs/glance-widget-chart-fixes/bugfix.md
+.kiro/specs/glance-widget-chart-fixes/design.md
+.kiro/specs/glance-widget-chart-fixes/tasks.md
+.kiro/specs/graph-glance-fixes/.config.kiro
+.kiro/specs/graph-glance-fixes/bugfix.md
+.kiro/specs/graph-glance-fixes/design.md
+.kiro/specs/graph-glance-fixes/tasks.md
