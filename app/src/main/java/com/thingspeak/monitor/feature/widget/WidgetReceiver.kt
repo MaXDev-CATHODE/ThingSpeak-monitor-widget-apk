@@ -11,6 +11,7 @@ import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import dagger.hilt.android.AndroidEntryPoint
@@ -41,6 +42,9 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
         android.util.Log.i("TS_DEBUG", "WidgetReceiver onUpdate: triggered for ids=${appWidgetIds.joinToString()}")
+
+        // Ensure DataSyncWorker is running — schedule if not active (fix for widget-no-auto-refresh)
+        enqueuePeriodicRefreshIfNeeded(context)
 
         // FORCE SYNC ID FROM ROOM TO GLANCE (NUCLEAR V8)
         // Note: Using a top-level coroutine scope for fire-and-forget sync to avoid blocking the receiver's main thread.
@@ -107,6 +111,29 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
                 val intervalMinutes = entryPoint.appPreferences().observeSyncInterval().first()
                 com.thingspeak.monitor.core.worker.DataSyncWorker.schedule(context, intervalMinutes)
                 android.util.Log.i(TAG, "periodic refresh enqueued with interval=$intervalMinutes min")
+            }
+        }
+
+        /**
+         * Enqueues periodic refresh only if DataSyncWorker is not already active.
+         * Checks the real WorkManager state (ENQUEUED or RUNNING) before scheduling,
+         * avoiding redundant enqueue calls while ensuring the worker is always running.
+         * Fire-and-forget, runs on Dispatchers.IO (blocking .get() is safe here).
+         */
+        fun enqueuePeriodicRefreshIfNeeded(context: Context) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val workInfos = WorkManager.getInstance(context)
+                    .getWorkInfosForUniqueWork(com.thingspeak.monitor.core.worker.DataSyncWorker.WORK_NAME)
+                    .get() // blocking, safe on Dispatchers.IO
+                val isActive = workInfos.any {
+                    it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
+                }
+                if (!isActive) {
+                    android.util.Log.i(TAG, "enqueuePeriodicRefreshIfNeeded: no active work found, scheduling")
+                    enqueuePeriodicRefresh(context)
+                } else {
+                    android.util.Log.v(TAG, "enqueuePeriodicRefreshIfNeeded: worker already active, skipping")
+                }
             }
         }
     }

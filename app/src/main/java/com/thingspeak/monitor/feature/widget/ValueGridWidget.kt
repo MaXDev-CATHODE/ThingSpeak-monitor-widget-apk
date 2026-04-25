@@ -170,6 +170,12 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
         android.util.Log.i("ValueGridWidgetReceiver", "First ValueGridWidget added — periodic refresh enqueued")
     }
 
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        // Ensure DataSyncWorker is running — schedule if not active (fix for widget-no-auto-refresh)
+        WidgetReceiver.enqueuePeriodicRefreshIfNeeded(context)
+    }
+
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
         android.util.Log.i("ValueGridWidgetReceiver", "onDeleted: ids=${appWidgetIds.joinToString()}")

@@ -57,16 +57,22 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = androidx.compose.material3.MaterialTheme.colorScheme.background
                 ) {
-                    val isWorkerScheduled by appPreferences.observeIsWorkerScheduled()
-                        .collectAsStateWithLifecycle(initialValue = true) // Default true to avoid double-scheduling
-
-                    androidx.compose.runtime.LaunchedEffect(isWorkerScheduled) {
-                        if (!isWorkerScheduled) {
-                            withContext(Dispatchers.IO) {
-                                val context = this@MainActivity
+                    // Check real WorkManager state instead of relying on the isWorkerScheduled flag.
+                    // The flag can remain true even when WorkManager has dropped the work
+                    // (e.g. after battery optimisation, system update or data clear).
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        withContext(Dispatchers.IO) {
+                            val context = this@MainActivity
+                            val workInfos = androidx.work.WorkManager.getInstance(context)
+                                .getWorkInfosForUniqueWork(com.thingspeak.monitor.core.worker.DataSyncWorker.WORK_NAME)
+                                .get() // blocking, but safe on Dispatchers.IO
+                            val isActive = workInfos.any {
+                                it.state == androidx.work.WorkInfo.State.ENQUEUED ||
+                                it.state == androidx.work.WorkInfo.State.RUNNING
+                            }
+                            if (!isActive) {
                                 val interval = appPreferences.observeSyncInterval().first()
                                 com.thingspeak.monitor.core.worker.DataSyncWorker.schedule(context, interval)
-                                appPreferences.setIsWorkerScheduled(true)
                             }
                         }
                     }
