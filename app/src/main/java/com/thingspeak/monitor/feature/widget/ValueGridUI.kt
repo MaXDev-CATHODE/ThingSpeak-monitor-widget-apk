@@ -18,6 +18,10 @@ import androidx.glance.LocalSize
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.layout.ContentScale
 import androidx.glance.text.TextStyle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun ValueGridContent(context: Context, data: WidgetData) {
@@ -363,6 +367,16 @@ class GridRefreshAction : androidx.glance.appwidget.action.ActionCallback {
         val channelId = bindingRepo.getBindingSync(appWidgetId)
         
         if (channelId != -1L) {
+            // Fix 1: set refreshing flag before enqueueing worker
+            androidx.glance.appwidget.state.updateAppWidgetState(
+                context, WidgetPreferencesStateDefinition, glanceId
+            ) { prefs ->
+                prefs.toMutablePreferences().apply {
+                    this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = true
+                }
+            }
+            ValueGridWidget().update(context, glanceId)
+
             val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.thingspeak.monitor.core.worker.DataSyncWorker>().build()
             androidx.work.WorkManager.getInstance(context)
                 .enqueueUniqueWork(
@@ -370,6 +384,26 @@ class GridRefreshAction : androidx.glance.appwidget.action.ActionCallback {
                     androidx.work.ExistingWorkPolicy.REPLACE,
                     workRequest
                 )
+
+            // Timeout guard: clear refreshing after 60s if worker did not finish
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.delay(60_000)
+                val currentState = androidx.glance.appwidget.state.getAppWidgetState(
+                    context,
+                    WidgetPreferencesStateDefinition,
+                    glanceId
+                )
+                if (currentState[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] == true) {
+                    androidx.glance.appwidget.state.updateAppWidgetState(
+                        context, WidgetPreferencesStateDefinition, glanceId
+                    ) { p ->
+                        p.toMutablePreferences().apply {
+                            this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = false
+                        }
+                    }
+                    ValueGridWidget().update(context, glanceId)
+                }
+            }
         }
     }
 }

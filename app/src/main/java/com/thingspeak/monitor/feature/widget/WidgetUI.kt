@@ -42,7 +42,6 @@ data class WidgetData(
     val minSetFields: Set<Int> = emptySet(),
     val maxSetFields: Set<Int> = emptySet(),
     val syncIntervalMinutes: Long = 30,
-    val lastSyncTime: Long = 0L,
     val lastSyncStatus: String = "NONE",
     val visibleFields: Set<Int>? = null,
     val chartType: String? = "line",
@@ -317,6 +316,16 @@ class RefreshActionV2 : androidx.glance.appwidget.action.ActionCallback {
         val channelId = bindingRepo.getBindingSync(appWidgetId)
         
         if (channelId != -1L) {
+            // Fix 1: set refreshing indicator before enqueueing worker
+            androidx.glance.appwidget.state.updateAppWidgetState(
+                context, WidgetPreferencesStateDefinition, glanceId
+            ) { prefs ->
+                prefs.toMutablePreferences().apply {
+                    this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = true
+                }
+            }
+            ThingSpeakGlanceWidget().update(context, glanceId)
+
             val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.thingspeak.monitor.core.worker.DataSyncWorker>().build()
             androidx.work.WorkManager.getInstance(context)
                 .enqueueUniqueWork(
@@ -324,6 +333,24 @@ class RefreshActionV2 : androidx.glance.appwidget.action.ActionCallback {
                     androidx.work.ExistingWorkPolicy.REPLACE,
                     workRequest
                 )
+
+            // Fallback timeout: clear refreshing after 60s if worker did not finish
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.delay(60_000)
+                val currentPrefs = androidx.glance.appwidget.state.getAppWidgetState(
+                    context, WidgetPreferencesStateDefinition, glanceId
+                )
+                if (currentPrefs[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] == true) {
+                    androidx.glance.appwidget.state.updateAppWidgetState(
+                        context, WidgetPreferencesStateDefinition, glanceId
+                    ) { p ->
+                        p.toMutablePreferences().apply {
+                            this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = false
+                        }
+                    }
+                    ThingSpeakGlanceWidget().update(context, glanceId)
+                }
+            }
         }
     }
 }

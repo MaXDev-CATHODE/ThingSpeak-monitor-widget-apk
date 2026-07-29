@@ -11,6 +11,7 @@ import dagger.hilt.android.EntryPointAccessors
 import com.thingspeak.monitor.core.di.WidgetEntryPoint
 import com.thingspeak.monitor.core.datastore.SavedChannel
 import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
 
 class ThingSpeakGlanceWidget : GlanceAppWidget() {
@@ -24,6 +25,14 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
         
         // V22 - Self-Healing: if prefs are empty, try to repair from DB
         val boundChannelId = bindingRepo.getBindingSync(appWidgetId)
+
+        // B1 fix: read real sync interval from global AppPreferences, with fallback
+        val realSyncIntervalMinutes: Long = try {
+            entryPoint.appPreferences().observeSyncInterval().first()
+        } catch (e: Exception) {
+            android.util.Log.w("TS_DEBUG", "Failed to read sync interval, using default 30min", e)
+            30L
+        }
 
         provideContent {
             val prefs = androidx.glance.currentState<androidx.datastore.preferences.core.Preferences>()
@@ -103,6 +112,7 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
             } else null
 
             val lastSyncStatus = prefs[androidx.datastore.preferences.core.stringPreferencesKey("last_sync_status")] ?: "NONE"
+
             val channelTimezone = prefs[androidx.datastore.preferences.core.stringPreferencesKey("channel_timezone")]
 
             val data = WidgetData(
@@ -120,6 +130,7 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
                 chartBitmap = chartBitmap,
                 isRefreshing = isRefreshing || (name == null),
                 lastSyncStatus = lastSyncStatus,
+                syncIntervalMinutes = realSyncIntervalMinutes,
                 visibleFields = visibleFieldsSet,
                 violatedMinFields = violatedMinSet,
                 violatedMaxFields = violatedMaxSet,
