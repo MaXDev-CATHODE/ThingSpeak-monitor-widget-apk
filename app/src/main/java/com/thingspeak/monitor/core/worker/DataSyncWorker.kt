@@ -121,9 +121,7 @@ class DataSyncWorker @AssistedInject constructor(
                                     fieldColorsOverride = channel.fieldColors
                                 )
                                 if (chartBitmap != null) {
-                                    val stream = java.io.ByteArrayOutputStream()
-                                    chartBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, stream)
-                                    android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.DEFAULT)
+                                    com.thingspeak.monitor.feature.widget.bitmapToBase64(chartBitmap)
                                 } else null
                             } catch (e: Exception) {
                                 android.util.Log.w("TS_DEBUG", "syncChannel: Chart FAILED for widget $id", e)
@@ -137,10 +135,10 @@ class DataSyncWorker @AssistedInject constructor(
                             channel = result.channel.toSavedChannel(),
                             latestFeed = result.latestEntry,
                             chartBitmapBase64 = if (widgetClass == ThingSpeakGlanceWidget::class.java) chartBase64 else null,
-                            violatedMinFields = result.allViolations.filter { it.condition == "LESS_THAN" }.map { it.fieldNumber }.toSet(),
-                            violatedMaxFields = result.allViolations.filter { it.condition == "GREATER_THAN" }.map { it.fieldNumber }.toSet(),
-                            minSetFields = result.channelRules.filter { it.condition == "LESS_THAN" && it.isEnabled }.map { it.fieldNumber }.toSet(),
-                            maxSetFields = result.channelRules.filter { it.condition == "GREATER_THAN" && it.isEnabled }.map { it.fieldNumber }.toSet()
+                            violatedMinFields = result.allViolations.filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_LESS_THAN }.map { it.fieldNumber }.toSet(),
+                            violatedMaxFields = result.allViolations.filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_GREATER_THAN }.map { it.fieldNumber }.toSet(),
+                            minSetFields = result.channelRules.filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_LESS_THAN && it.isEnabled }.map { it.fieldNumber }.toSet(),
+                            maxSetFields = result.channelRules.filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_GREATER_THAN && it.isEnabled }.map { it.fieldNumber }.toSet()
                         )
                         // Trigger actual update
                         when (widgetClass) {

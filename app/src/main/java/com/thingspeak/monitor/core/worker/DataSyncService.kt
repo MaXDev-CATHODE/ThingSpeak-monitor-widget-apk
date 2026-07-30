@@ -163,10 +163,10 @@ class DataSyncService : Service() {
                         channel = channel.toSavedChannel(),
                         latestFeed = result.latestEntry,
                         chartBitmapBase64 = if (widgetClass == ThingSpeakGlanceWidget::class.java) chartBase64 else null,
-                        violatedMinFields = result.allViolations.filter { it.condition == "LESS_THAN" }.map { it.fieldNumber }.toSet(),
-                        violatedMaxFields = result.allViolations.filter { it.condition == "GREATER_THAN" }.map { it.fieldNumber }.toSet(),
-                        minSetFields = result.channelRules.filter { it.condition == "LESS_THAN" && it.isEnabled }.map { it.fieldNumber }.toSet(),
-                        maxSetFields = result.channelRules.filter { it.condition == "GREATER_THAN" && it.isEnabled }.map { it.fieldNumber }.toSet()
+                        violatedMinFields = result.allViolations.filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_LESS_THAN }.map { it.fieldNumber }.toSet(),
+                        violatedMaxFields = result.allViolations.filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_GREATER_THAN }.map { it.fieldNumber }.toSet(),
+                        minSetFields = result.channelRules.filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_LESS_THAN && it.isEnabled }.map { it.fieldNumber }.toSet(),
+                        maxSetFields = result.channelRules.filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_GREATER_THAN && it.isEnabled }.map { it.fieldNumber }.toSet()
                     )
 
                     // Trigger UI refresh
