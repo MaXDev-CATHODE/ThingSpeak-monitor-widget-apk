@@ -58,7 +58,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
                                 p.toMutablePreferences().apply {
                                     if (this[WidgetPrefsKeys.KEY_CHANNEL_ID] != boundId) {
                                         this[WidgetPrefsKeys.KEY_CHANNEL_ID] = boundId
-                                        Log.e("NUCLEAR_V8", "PUSHED binding to Glance for standard $id -> $boundId")
+                                        Log.e("TS_DEBUG", "PUSHED binding to Glance for standard $id -> $boundId")
                                     }
                                 }
                             }
@@ -67,7 +67,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("NUCLEAR_V8", "Failed to push binding for standard $id", e)
+                    Log.e("TS_DEBUG", "Failed to push binding for standard $id", e)
                 }
             }
         }
@@ -122,7 +122,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
     }
 
     companion object {
-        private const val TAG = "WidgetReceiver"
+        private const val TAG = "TS_DEBUG"
         private val periodicScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun enqueuePeriodicRefresh(context: Context) {

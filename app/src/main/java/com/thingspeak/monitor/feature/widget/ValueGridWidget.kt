@@ -78,7 +78,7 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         WidgetReceiver.enqueuePeriodicRefresh(context)
-        android.util.Log.i("ValueGridWidgetReceiver", "First ValueGridWidget added - periodic refresh enqueued")
+        android.util.Log.i("TS_DEBUG", "First ValueGridWidget added - periodic refresh enqueued")
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -97,7 +97,7 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
                                 p.toMutablePreferences().apply {
                                     if (this[WidgetPrefsKeys.KEY_CHANNEL_ID] != boundId) {
                                         this[WidgetPrefsKeys.KEY_CHANNEL_ID] = boundId
-                                        android.util.Log.i("ValueGridWidgetReceiver", "Synced binding to Glance for grid $id -> $boundId")
+                                        android.util.Log.i("TS_DEBUG", "Synced binding to Glance for grid $id -> $boundId")
                                     }
                                 }
                             }
@@ -105,7 +105,7 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
                         }
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("ValueGridWidgetReceiver", "Failed to push binding for grid $id", e)
+                    android.util.Log.e("TS_DEBUG", "Failed to push binding for grid $id", e)
                 }
             }
         }
@@ -113,7 +113,7 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
-        android.util.Log.i("ValueGridWidgetReceiver", "onDeleted: ids=${appWidgetIds.joinToString()}")
+        android.util.Log.i("TS_DEBUG", "onDeleted: ids=${appWidgetIds.joinToString()}")
         val manager = AppWidgetManager.getInstance(context)
         val remainingGlance = manager.getAppWidgetIds(
             ComponentName(context, WidgetReceiver::class.java)
@@ -123,16 +123,16 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
         )
         if (remainingGlance.isEmpty() && remainingValueGridWidgets.isEmpty()) {
             WorkManager.getInstance(context).cancelUniqueWork(DataSyncWorker.WORK_NAME)
-            android.util.Log.w("ValueGridWidgetReceiver", "Last widget of any type removed - periodic refresh cancelled")
+            android.util.Log.w("TS_DEBUG", "Last widget of any type removed - periodic refresh cancelled")
         }
 
         appWidgetIds.forEach { id ->
             scope.launch {
                 try {
                     repository.removeBinding(id)
-                    android.util.Log.i("ValueGridWidgetReceiver", "cleaned Room binding for $id")
+                    android.util.Log.i("TS_DEBUG", "cleaned Room binding for $id")
                 } catch (e: Exception) {
-                    android.util.Log.e("ValueGridWidgetReceiver", "failed to clean Room binding for $id", e)
+                    android.util.Log.e("TS_DEBUG", "failed to clean Room binding for $id", e)
                 }
             }
         }

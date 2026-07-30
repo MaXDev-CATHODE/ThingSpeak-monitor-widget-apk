@@ -23,7 +23,7 @@ object WidgetUtils {
     fun isDataStale(createdAt: String, thresholdMs: Long = STALE_THRESHOLD_MS): Boolean {
         val timestamp = parseIsoTime(createdAt) ?: return true
         val elapsed = System.currentTimeMillis() - timestamp
-        return elapsed > (thresholdMs + (2 * 60 * 1000L)) 
+        return elapsed > thresholdMs
     }
 
     /**

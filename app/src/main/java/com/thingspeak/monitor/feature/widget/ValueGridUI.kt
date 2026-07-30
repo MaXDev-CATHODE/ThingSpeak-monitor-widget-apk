@@ -3,10 +3,7 @@ package com.thingspeak.monitor.feature.widget
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
-import androidx.glance.GlanceTheme
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.background
@@ -16,12 +13,7 @@ import androidx.glance.text.Text
 import androidx.glance.unit.ColorProvider
 import androidx.glance.LocalSize
 import androidx.glance.appwidget.cornerRadius
-import androidx.glance.layout.ContentScale
 import androidx.glance.text.TextStyle
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 fun ValueGridContent(context: Context, data: WidgetData) {
@@ -73,7 +65,7 @@ fun ValueGridContent(context: Context, data: WidgetData) {
                         ),
                         maxLines = 1
                     )
-                    if (data.lastSyncStatus == "ERROR_SYNC") {
+                    if (data.lastSyncStatus == WidgetPrefsKeys.STATUS_ERROR_SYNC) {
                         Spacer(GlanceModifier.width(4.dp))
                         Text(
                             text = "⚠",
@@ -348,63 +340,18 @@ fun ValueTile(
     }
 }
 
-private fun isColorDark(color: Int): Boolean {
-    val darkness = 1 - (0.299 * android.graphics.Color.red(color) + 
-                       0.587 * android.graphics.Color.green(color) + 
-                       0.114 * android.graphics.Color.blue(color)) / 255
-    return darkness >= 0.5
-}
-
 class GridRefreshAction : androidx.glance.appwidget.action.ActionCallback {
     override suspend fun onAction(
         context: Context,
         glanceId: androidx.glance.GlanceId,
         parameters: androidx.glance.action.ActionParameters
     ) {
-        val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
-        val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext, com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java)
-        val bindingRepo = entryPoint.widgetBindingRepository()
-        val channelId = bindingRepo.getBindingSync(appWidgetId)
-        
-        if (channelId != -1L) {
-            // Fix 1: set refreshing flag before enqueueing worker
-            androidx.glance.appwidget.state.updateAppWidgetState(
-                context, WidgetPreferencesStateDefinition, glanceId
-            ) { prefs ->
-                prefs.toMutablePreferences().apply {
-                    this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = true
-                }
-            }
-            ValueGridWidget().update(context, glanceId)
-
-            val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.thingspeak.monitor.core.worker.DataSyncWorker>().build()
-            androidx.work.WorkManager.getInstance(context)
-                .enqueueUniqueWork(
-                    "widget_grid_refresh_sync_$appWidgetId",
-                    androidx.work.ExistingWorkPolicy.REPLACE,
-                    workRequest
-                )
-
-            // Timeout guard: clear refreshing after 60s if worker did not finish
-            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                kotlinx.coroutines.delay(60_000)
-                val currentState = androidx.glance.appwidget.state.getAppWidgetState(
-                    context,
-                    WidgetPreferencesStateDefinition,
-                    glanceId
-                )
-                if (currentState[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] == true) {
-                    androidx.glance.appwidget.state.updateAppWidgetState(
-                        context, WidgetPreferencesStateDefinition, glanceId
-                    ) { p ->
-                        p.toMutablePreferences().apply {
-                            this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = false
-                        }
-                    }
-                    ValueGridWidget().update(context, glanceId)
-                }
-            }
-        }
+        performWidgetRefreshAction(
+            context = context,
+            glanceId = glanceId,
+            updateWidget = { ValueGridWidget().update(context, glanceId) },
+            uniqueWorkPrefix = "widget_grid_refresh_sync"
+        )
     }
 }
 
@@ -417,11 +364,8 @@ class GridEditAction : androidx.glance.appwidget.action.ActionCallback {
         val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
         val intent = android.content.Intent(context, ValueGridWidgetConfigActivity::class.java).apply {
             putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
         }
         context.startActivity(intent)
     }
 }
-
-private val Int.sp get() = androidx.compose.ui.unit.TextUnit(this.toFloat(), androidx.compose.ui.unit.TextUnitType.Sp)
-private val Int.dp get() = androidx.compose.ui.unit.Dp(this.toFloat())

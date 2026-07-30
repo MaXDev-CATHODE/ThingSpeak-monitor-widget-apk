@@ -137,7 +137,7 @@ class WidgetConfigActivity : ComponentActivity() {
                     lastSyncTime = System.currentTimeMillis()
                 )
                 channelPreferences.save(updatedChannel)
-                android.util.Log.d("NUCLEAR_TRACER", "Core Channel info saved (Visuals skipped for isolation)")
+                android.util.Log.d("TS_DEBUG", "Core Channel info saved (Visuals skipped for isolation)")
 
                 widgetBindingRepository.saveBinding(appWidgetId, channelId)
 

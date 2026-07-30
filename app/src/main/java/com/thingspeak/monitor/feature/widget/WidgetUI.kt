@@ -18,15 +18,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.glance.Image
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.text.FontWeight
-import androidx.glance.unit.ColorProvider as GlanceColorProvider
 import com.thingspeak.monitor.feature.channel.data.local.FeedEntryEntity
-import androidx.glance.Button
 import androidx.glance.text.TextAlign
-import androidx.glance.unit.ColorProvider as GColor
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 data class WidgetData(
     val channelName: String?,
@@ -46,7 +39,7 @@ data class WidgetData(
     val minSetFields: Set<Int> = emptySet(),
     val maxSetFields: Set<Int> = emptySet(),
     val syncIntervalMinutes: Long = 30,
-    val lastSyncStatus: String = "NONE",
+    val lastSyncStatus: String = WidgetPrefsKeys.STATUS_NONE,
     val visibleFields: Set<Int>? = null,
     val chartType: String? = "line",
     val chartBitmap: android.graphics.Bitmap? = null,
@@ -63,7 +56,6 @@ fun WidgetUI(data: WidgetData) {
     val isCompact = size.height < 140.dp || size.width < 200.dp
     val isTiny = size.height < 100.dp || size.width < 150.dp
     
-    // Scale font sizes dynamically - respect user data.fontSize
     val titleSize = when {
         isTiny -> 10
         isCompact -> 11
@@ -95,7 +87,6 @@ fun WidgetUI(data: WidgetData) {
         if (tc != null && tc.startsWith("#")) {
             Color(android.graphics.Color.parseColor(tc))
         } else {
-            // Auto-contrast
             if (isDarkBg) Color.White else Color.Black
         }
     } catch (e: Exception) {
@@ -107,7 +98,7 @@ fun WidgetUI(data: WidgetData) {
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(GlanceColorProvider(bgColor))
+            .background(ColorProvider(bgColor))
             .cornerRadius(12.dp)
             .padding(pad.dp)
     ) {
@@ -121,18 +112,18 @@ fun WidgetUI(data: WidgetData) {
                     Text(
                         text = data.channelName ?: "ThingSpeak",
                         style = TextStyle(
-                            color = GlanceColorProvider(textColor),
+                            color = ColorProvider(textColor),
                             fontSize = titleSize.sp,
                             fontWeight = FontWeight.Bold
                         ),
                         maxLines = 1
                     )
-                    if (data.lastSyncStatus == "ERROR_SYNC") {
+                    if (data.lastSyncStatus == WidgetPrefsKeys.STATUS_ERROR_SYNC) {
                         Spacer(GlanceModifier.width(2.dp))
                         Text(
                             text = "⚠",
                             style = TextStyle(
-                                color = GlanceColorProvider(Color.Red),
+                                color = ColorProvider(Color.Red),
                                 fontSize = titleSize.sp
                             )
                         )
@@ -145,7 +136,7 @@ fun WidgetUI(data: WidgetData) {
                         Text(
                             text = "Measured: $timeStr",
                             style = TextStyle(
-                                color = GlanceColorProvider(textColor.copy(alpha = 0.6f)),
+                                color = ColorProvider(textColor.copy(alpha = 0.6f)),
                                 fontSize = (subSize - 1).sp
                             )
                         )
@@ -153,7 +144,7 @@ fun WidgetUI(data: WidgetData) {
                             Spacer(GlanceModifier.width(3.dp))
                             Text(
                                 text = "⌛",
-                                style = TextStyle(color = GlanceColorProvider(textColor.copy(alpha = 0.6f)), fontSize = (subSize - 1).sp)
+                                style = TextStyle(color = ColorProvider(textColor.copy(alpha = 0.6f)), fontSize = (subSize - 1).sp)
                             )
                         }
                     }
@@ -171,7 +162,7 @@ fun WidgetUI(data: WidgetData) {
                     Text(
                         text = "✎",
                         style = TextStyle(
-                            color = GlanceColorProvider(textColor),
+                            color = ColorProvider(textColor),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
                         ),
@@ -183,12 +174,12 @@ fun WidgetUI(data: WidgetData) {
                     modifier = GlanceModifier
                         .background(buttonBg)
                         .cornerRadius(6.dp)
-                        .clickable(actionRunCallback<RefreshActionV2>())
+                        .clickable(actionRunCallback<RefreshAction>())
                 ) {
                     Text(
                         text = if (data.isRefreshing) "●" else "↻",
                         style = TextStyle(
-                            color = GlanceColorProvider(textColor),
+                            color = ColorProvider(textColor),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
                         ),
@@ -200,14 +191,13 @@ fun WidgetUI(data: WidgetData) {
         
         Spacer(GlanceModifier.height(if (isCompact) 2.dp else 4.dp))
         
-        // Fields — filter by visible fields config AND by having a name
+        // Fields
         val fieldsToShow = (1..8).filter { fieldNum ->
             val name = data.fieldNames[fieldNum]
             val isVisible = data.visibleFields?.contains(fieldNum) ?: true
             !name.isNullOrBlank() && isVisible
         }
         
-        // Limit fields if widget is compact to leave room for chart
         val maxFields = when {
             isTiny -> 2
             isCompact -> 4
@@ -240,7 +230,7 @@ fun WidgetUI(data: WidgetData) {
             ) {
                 Text(
                     text = data.fieldNames[fieldNum] ?: "Field $fieldNum",
-                    style = TextStyle(color = GlanceColorProvider(textColor), fontSize = fieldSize.sp),
+                    style = TextStyle(color = ColorProvider(textColor), fontSize = fieldSize.sp),
                     modifier = GlanceModifier.defaultWeight(),
                     maxLines = 1
                 )
@@ -248,21 +238,21 @@ fun WidgetUI(data: WidgetData) {
                     if (data.minSetFields.contains(fieldNum)) {
                         Text(
                             text = "▼",
-                            style = TextStyle(color = GlanceColorProvider(if (data.violatedMinFields.contains(fieldNum)) Color.Red else Color.Gray), fontSize = (fieldSize - 2).sp, fontWeight = FontWeight.Bold),
+                            style = TextStyle(color = ColorProvider(if (data.violatedMinFields.contains(fieldNum)) Color.Red else Color.Gray), fontSize = (fieldSize - 2).sp, fontWeight = FontWeight.Bold),
                             modifier = GlanceModifier.padding(end = 2.dp)
                         )
                     }
                     if (data.maxSetFields.contains(fieldNum)) {
                         Text(
                             text = "▲",
-                            style = TextStyle(color = GlanceColorProvider(if (data.violatedMaxFields.contains(fieldNum)) Color.Red else Color.Gray), fontSize = (fieldSize - 2).sp, fontWeight = FontWeight.Bold),
+                            style = TextStyle(color = ColorProvider(if (data.violatedMaxFields.contains(fieldNum)) Color.Red else Color.Gray), fontSize = (fieldSize - 2).sp, fontWeight = FontWeight.Bold),
                             modifier = GlanceModifier.padding(end = 4.dp)
                         )
                     }
                     Text(
                         text = if (unit.isNotBlank()) "$roundedValue $unit" else roundedValue,
                         style = TextStyle(
-                            color = GlanceColorProvider(if (data.violatedMinFields.contains(fieldNum) || data.violatedMaxFields.contains(fieldNum)) Color.Red else textColor),
+                            color = ColorProvider(if (data.violatedMinFields.contains(fieldNum) || data.violatedMaxFields.contains(fieldNum)) Color.Red else textColor),
                             fontSize = fieldSize.sp,
                             fontWeight = FontWeight.Bold
                         ),
@@ -272,7 +262,7 @@ fun WidgetUI(data: WidgetData) {
             }
         }
 
-        // Chart Section — fills remaining space
+        // Chart Section
         if (!isTiny) {
             Spacer(GlanceModifier.height(4.dp))
             Box(
@@ -293,7 +283,7 @@ fun WidgetUI(data: WidgetData) {
                 } else {
                     Text(
                         text = if (data.isRefreshing) "Loading Chart..." else "No chart data",
-                        style = TextStyle(color = GlanceColorProvider(textColor.copy(alpha = 0.4f)), fontSize = 10.sp)
+                        style = TextStyle(color = ColorProvider(textColor.copy(alpha = 0.4f)), fontSize = 10.sp)
                     )
                 }
             }
@@ -301,61 +291,18 @@ fun WidgetUI(data: WidgetData) {
     }
 }
 
-private fun isColorDark(color: Int): Boolean {
-    val darkness = 1 - (0.299 * android.graphics.Color.red(color) + 
-                       0.587 * android.graphics.Color.green(color) + 
-                       0.114 * android.graphics.Color.blue(color)) / 255
-    return darkness >= 0.5
-}
-
-class RefreshActionV2 : androidx.glance.appwidget.action.ActionCallback {
+class RefreshAction : androidx.glance.appwidget.action.ActionCallback {
     override suspend fun onAction(
         context: android.content.Context,
         glanceId: androidx.glance.GlanceId,
         parameters: androidx.glance.action.ActionParameters
     ) {
-        val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
-        val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext, com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java)
-        val bindingRepo = entryPoint.widgetBindingRepository()
-        val channelId = bindingRepo.getBindingSync(appWidgetId)
-        
-        if (channelId != -1L) {
-            // Fix 1: set refreshing indicator before enqueueing worker
-            androidx.glance.appwidget.state.updateAppWidgetState(
-                context, WidgetPreferencesStateDefinition, glanceId
-            ) { prefs ->
-                prefs.toMutablePreferences().apply {
-                    this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = true
-                }
-            }
-            ThingSpeakGlanceWidget().update(context, glanceId)
-
-            val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.thingspeak.monitor.core.worker.DataSyncWorker>().build()
-            androidx.work.WorkManager.getInstance(context)
-                .enqueueUniqueWork(
-                    "glance_refresh_sync_$appWidgetId",
-                    androidx.work.ExistingWorkPolicy.REPLACE,
-                    workRequest
-                )
-
-            // Fallback timeout: clear refreshing after 60s if worker did not finish
-            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                kotlinx.coroutines.delay(60_000)
-                val currentPrefs = androidx.glance.appwidget.state.getAppWidgetState(
-                    context, WidgetPreferencesStateDefinition, glanceId
-                )
-                if (currentPrefs[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] == true) {
-                    androidx.glance.appwidget.state.updateAppWidgetState(
-                        context, WidgetPreferencesStateDefinition, glanceId
-                    ) { p ->
-                        p.toMutablePreferences().apply {
-                            this[androidx.datastore.preferences.core.booleanPreferencesKey("is_refreshing")] = false
-                        }
-                    }
-                    ThingSpeakGlanceWidget().update(context, glanceId)
-                }
-            }
-        }
+        performWidgetRefreshAction(
+            context = context,
+            glanceId = glanceId,
+            updateWidget = { ThingSpeakGlanceWidget().update(context, glanceId) },
+            uniqueWorkPrefix = "glance_refresh_sync"
+        )
     }
 }
 
@@ -368,12 +315,8 @@ class EditActionV2 : androidx.glance.appwidget.action.ActionCallback {
         val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
         val intent = android.content.Intent(context, WidgetConfigActivity::class.java).apply {
             putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
         }
         context.startActivity(intent)
     }
 }
-
-private val Int.sp get() = androidx.compose.ui.unit.TextUnit(this.toFloat(), androidx.compose.ui.unit.TextUnitType.Sp)
-private val Int.dp get() = androidx.compose.ui.unit.Dp(this.toFloat())
-

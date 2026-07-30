@@ -58,7 +58,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                 AppWidgetManager.EXTRA_APPWIDGET_ID,
                 AppWidgetManager.INVALID_APPWIDGET_ID
             )
-            android.util.Log.d("SNIPER_CONFIG", "Activity started with appWidgetId=$appWidgetId")
+            android.util.Log.d("TS_DEBUG", "Activity started with appWidgetId=$appWidgetId")
         }
 
         val resultValue = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -137,7 +137,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                             coroutineScope.launch {
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                                     try {
-                                        android.util.Log.d("SNIPER_V5", "onSave triggered for channel $channelId, widget $appWidgetId")
+                                        android.util.Log.d("TS_DEBUG", "onSave triggered for channel $channelId, widget $appWidgetId")
 
                                         // 1. Update Core Channel Info (API Key, Name Only)
                                         val existingChannel = channelPreferences.observe().first().find { it.id == channelId }
@@ -148,19 +148,19 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                             lastSyncStatus = WidgetPrefsKeys.STATUS_NONE,
                                             lastSyncTime = System.currentTimeMillis()
                                         )
-                                        channelPreferences.save(updatedChannel)
-                                        android.util.Log.d("NUCLEAR_V8", "1. Core Channel info saved for $channelId")
+                                            channelPreferences.save(updatedChannel)
+                                        android.util.Log.d("TS_DEBUG", "1. Core Channel info saved for $channelId")
 
                                         // 2. Alert Rules saving (Unified - Global per channel)
                                         repository.deleteGlobalAlertRules(channelId)
                                         alertRules.forEach { rule ->
                                             repository.saveAlertRule(rule.copy(appWidgetId = null))
                                         }
-                                        android.util.Log.d("NUCLEAR_V8", "Unified Alarms: Drawn ${alertRules.size} rules for channel $channelId")
+                                        android.util.Log.d("TS_DEBUG", "Unified Alarms: Drawn ${alertRules.size} rules for channel $channelId")
 
                                         // 3. Save binding synchronicly
                                         widgetBindingRepository.saveBinding(appWidgetId, channelId)
-                                        android.util.Log.d("NUCLEAR_V8", "3. Binding DB saved synchronicly: $appWidgetId -> $channelId")
+                                        android.util.Log.d("TS_DEBUG", "3. Binding DB saved synchronicly: $appWidgetId -> $channelId")
 
                                         // Sync with Room DB for app UI consistency
                                         repository.observeChannel(channelId).first()?.let { roomChannel ->
@@ -176,7 +176,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
                                         ).launch {
                                             try {
-                                                android.util.Log.d("NUCLEAR_V8", ">>> STARTING ASYNC SYNC V8 for $appWidgetId")
+                                                android.util.Log.d("TS_DEBUG", ">>> STARTING ASYNC SYNC V8 for $appWidgetId")
 
                                                 // Update Glance DataStore
                                                 val gId = findWidgetGlanceId(appContext, appWidgetId, widgetClasses = listOf(ValueGridWidget::class.java))
@@ -196,7 +196,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                             this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
                                                         }
                                                     }
-                                                    android.util.Log.d("NUCLEAR_V8", "Async: DataStore updated for $appWidgetId")
+                                                    android.util.Log.d("TS_DEBUG", "Async: DataStore updated for $appWidgetId")
                                                 }
 
                                                 ValueGridWidget().updateAll(appContext)
@@ -207,7 +207,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                     setPackage(packageName)
                                                 }
                                                 appContext.sendBroadcast(updateIntent)
-                                                android.util.Log.d("NUCLEAR_V8", "Async: System signals sent.")
+                                                android.util.Log.d("TS_DEBUG", "Async: System signals sent.")
 
                                                 // Refresh feed and enqueue worker via proper WorkManager API
                                                 repository.refreshFeed(channelId, apiKey, chartTimespan = chartTimespanStr)
@@ -219,9 +219,9 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                         ExistingWorkPolicy.REPLACE,
                                                         workRequest
                                                     )
-                                                android.util.Log.d("NUCLEAR_V8", "Async: Worker enqueued via WorkManager.")
+                                                android.util.Log.d("TS_DEBUG", "Async: Worker enqueued via WorkManager.")
                                             } catch (e: Exception) {
-                                                android.util.Log.e("NUCLEAR_V8", "Async: FATAL ERROR", e)
+                                                android.util.Log.e("TS_DEBUG", "Async: FATAL ERROR", e)
                                                 ValueGridWidget().updateAll(appContext)
                                             }
                                         }
@@ -233,12 +233,12 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                 putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                                             }
                                             setResult(RESULT_OK, resultIntent)
-                                            android.util.Log.d("NUCLEAR_V8", ">>> RESULT_OK sent. Finishing.")
+                                            android.util.Log.d("TS_DEBUG", ">>> RESULT_OK sent. Finishing.")
                                             finish()
                                         }
 
                                     } catch (e: Exception) {
-                                        android.util.Log.e("NUCLEAR_V8", "FATAL onSave error", e)
+                                        android.util.Log.e("TS_DEBUG", "FATAL onSave error", e)
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                             finish()
                                         }

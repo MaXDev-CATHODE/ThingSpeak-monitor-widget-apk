@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
  * Sniper-grade ID resolver to ensure consistent channel binding across all widget types and actions.
  */
 object WidgetIdResolver {
-    private const val TAG = "SNIPER_ID"
+    private const val TAG = "TS_DEBUG"
     private val PREF_CHANNEL_ID = longPreferencesKey("channel_id")
 
     /**
@@ -39,15 +39,15 @@ object WidgetIdResolver {
         bindingRepo: WidgetBindingRepository,
         glancePrefs: Preferences
     ): Flow<Long> {
-        android.util.Log.v("AUDIT_V11", "Resolver [OBSERVE_START] appWidgetId=$appWidgetId")
+        android.util.Log.v("TS_DEBUG", "Resolver [OBSERVE_START] appWidgetId=$appWidgetId")
         return bindingRepo.observeChannelId(appWidgetId).map { boundId ->
             val prefId = glancePrefs[PREF_CHANNEL_ID] ?: -1L
             val effective = if (boundId > 0) boundId else prefId
             
             if (effective <= 0L) {
-                android.util.Log.e("AUDIT_V11", "Resolver [FAILED] No ID for $appWidgetId (bound=$boundId, pref=$prefId)")
+                android.util.Log.e("TS_DEBUG", "Resolver [FAILED] No ID for $appWidgetId (bound=$boundId, pref=$prefId)")
             } else {
-                android.util.Log.d("AUDIT_V11", "Resolver [OK] $appWidgetId: bound=$boundId, pref=$prefId -> effective=$effective")
+                android.util.Log.d("TS_DEBUG", "Resolver [OK] $appWidgetId: bound=$boundId, pref=$prefId -> effective=$effective")
             }
             effective
         }
