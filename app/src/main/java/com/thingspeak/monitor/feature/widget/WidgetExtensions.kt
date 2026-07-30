@@ -8,6 +8,13 @@ import androidx.compose.ui.unit.TextUnitType
 import androidx.datastore.preferences.core.Preferences
 import com.thingspeak.monitor.feature.channel.data.local.FeedEntryEntity
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private val refreshTimeoutJobs = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.Job>()
 
 const val DEFAULT_SYNC_INTERVAL_MINUTES = 30L
 
@@ -225,21 +232,20 @@ suspend fun performWidgetRefreshAction(
         return
     }
 
-    // Fallback timeout: clear refreshing after 60s if worker didn't finish.
-    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
-        kotlinx.coroutines.delay(60_000)
+    // Fallback timeout: clear refreshing after 60s if worker didn't finish (previous job cancelled on re-tap)
+    refreshTimeoutJobs.remove(appWidgetId)?.cancel()
+    val timeoutJob = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        delay(60_000)
+        refreshTimeoutJobs.remove(appWidgetId)
         val currentPrefs = androidx.glance.appwidget.state.getAppWidgetState(
             context, WidgetPreferencesStateDefinition, glanceId
         )
         if (currentPrefs[WidgetPrefsKeys.KEY_IS_REFRESHING] == true) {
             androidx.glance.appwidget.state.updateAppWidgetState(
                 context, WidgetPreferencesStateDefinition, glanceId
-            ) { p ->
-                p.toMutablePreferences().apply {
-                    this[WidgetPrefsKeys.KEY_IS_REFRESHING] = false
-                }
-            }
+            ) { p -> p.toMutablePreferences().apply { this[WidgetPrefsKeys.KEY_IS_REFRESHING] = false } }
             updateWidget()
         }
     }
+    refreshTimeoutJobs[appWidgetId] = timeoutJob
 }
