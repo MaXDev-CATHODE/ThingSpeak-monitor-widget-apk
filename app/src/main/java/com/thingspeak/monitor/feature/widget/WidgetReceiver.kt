@@ -105,6 +105,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
         }
 
         appWidgetIds.forEach { id ->
+            cancelRefreshTimeout(id)
             scope.launch {
                 try {
                     repository.removeBinding(id)

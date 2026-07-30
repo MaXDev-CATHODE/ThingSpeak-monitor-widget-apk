@@ -194,6 +194,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                             this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chResultsCount
                                                             this[WidgetPrefsKeys.KEY_IS_REFRESHING] = true
                                                             this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
+                                                            this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
                                                         }
                                                     }
                                                     android.util.Log.d("TS_DEBUG", "Async: DataStore updated for $appWidgetId")

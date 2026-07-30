@@ -16,6 +16,10 @@ import kotlinx.coroutines.launch
 
 private val refreshTimeoutJobs = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.Job>()
 
+fun cancelRefreshTimeout(appWidgetId: Int) {
+    refreshTimeoutJobs.remove(appWidgetId)?.cancel()
+}
+
 const val DEFAULT_SYNC_INTERVAL_MINUTES = 30L
 
 val Int.sp: TextUnit get() = TextUnit(this.toFloat(), TextUnitType.Sp)
