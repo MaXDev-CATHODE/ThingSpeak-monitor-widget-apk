@@ -1,11 +1,14 @@
 package com.thingspeak.monitor.feature.widget
 
 import android.content.Context
-import androidx.datastore.preferences.core.*
+import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.GlanceId
 import com.thingspeak.monitor.core.datastore.SavedChannel
+import com.thingspeak.monitor.core.di.WidgetEntryPoint
 import com.thingspeak.monitor.feature.channel.domain.model.FeedEntry
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 
 /**
@@ -13,6 +16,82 @@ import org.json.JSONObject
  * Ensures consistent key usage across different widget types and sync sources.
  */
 object WidgetUpdateHelper {
+
+    const val MAX_GLANCE_RETRIES = 2
+
+    /**
+     * Shared updateAppWidget logic for both ThingSpeakGlanceWidget and ValueGridWidget.
+     * Eliminates ~80% code duplication between the two implementations.
+     *
+     * @param onGenerateChart Optional callback to generate chart bitmap (only for chart widget).
+     */
+    suspend fun performUpdate(
+        context: Context,
+        appWidgetId: Int,
+        widgetInstanceFactory: () -> androidx.glance.appwidget.GlanceAppWidget,
+        onGenerateChart: suspend (SavedChannel, Long) -> String? = { _, _ -> null }
+    ) {
+        val entryPoint = EntryPointAccessors.fromApplication(
+            context.applicationContext, WidgetEntryPoint::class.java
+        )
+        val bindingRepo = entryPoint.widgetBindingRepository()
+        val chanPrefs = entryPoint.channelPreferences()
+        val getChannelFeed = entryPoint.getChannelFeedUseCase()
+
+        val channelId = bindingRepo.getBindingSync(appWidgetId)
+        if (channelId == -1L) return
+
+        val savedChannels = chanPrefs.observe().first()
+        val channel = savedChannels.find { it.id == channelId } ?: return
+
+        val feeds = getChannelFeed.observe(channelId).first()
+        val latestFeed = feeds.lastOrNull()
+
+        val glanceId = findWidgetGlanceId(context, appWidgetId, maxRetries = MAX_GLANCE_RETRIES)
+        if (glanceId == null) {
+            android.util.Log.e("TS_DEBUG", "updateWidget: Could not find GlanceId for $appWidgetId")
+            return
+        }
+
+        // Alert rules
+        val repo = entryPoint.channelRepository()
+        val checkRules = entryPoint.checkAlertRulesUseCase()
+        val widgetAlerts = repo.getAlertRules(channelId, appWidgetId)
+
+        val violations = latestFeed?.let { checkRules(it, widgetAlerts) }
+            ?: emptyList<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>()
+
+        // Chart generation (only for chart widget; grid widgets get null)
+        val chartBase64 = onGenerateChart(channel, channelId)
+
+        // Resolve chartResults from existing prefs (preserve user setting)
+        val prefs = getAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId)
+        val cachedChartResults = prefs?.get(WidgetPrefsKeys.KEY_CHART_RESULTS) ?: 60
+
+        // Push to DataStore Preferences
+        updateWidgetPreferences(
+            context = context,
+            glanceId = glanceId,
+            channel = channel.copy(chartResults = cachedChartResults),
+            latestFeed = latestFeed,
+            chartBitmapBase64 = chartBase64,
+            violatedMinFields = violations
+                .filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_LESS_THAN }
+                .map { it.fieldNumber }.toSet(),
+            violatedMaxFields = violations
+                .filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_GREATER_THAN }
+                .map { it.fieldNumber }.toSet(),
+            minSetFields = widgetAlerts
+                .filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_LESS_THAN && it.isEnabled }
+                .map { it.fieldNumber }.toSet(),
+            maxSetFields = widgetAlerts
+                .filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_GREATER_THAN && it.isEnabled }
+                .map { it.fieldNumber }.toSet()
+        )
+
+        // Re-render widget
+        widgetInstanceFactory().update(context, glanceId)
+    }
 
     suspend fun updateWidgetPreferences(
         context: Context,
@@ -33,7 +112,8 @@ object WidgetUpdateHelper {
                     put("createdAt", f.createdAt)
                     put("entryId", f.entryId)
                     (1..8).forEach { i ->
-                        put("field$i", f.fields[i] ?: "null")
+                        val value = f.fields[i]
+                        if (value != null) put("field$i", value)
                     }
                 }.toString()
             } catch (e: Exception) { null }
@@ -48,59 +128,48 @@ object WidgetUpdateHelper {
         }.toString()
 
         updateAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId) { prefs ->
-            android.util.Log.v("TS_DEBUG", "PUSHING preferences to Glance for channel ${channel.id}")
+            android.util.Log.d("TS_DEBUG", "PUSHING preferences to widget for channel ${channel.id}")
             prefs.toMutablePreferences().apply {
-                this[longPreferencesKey("channel_id")] = channel.id
-                this[stringPreferencesKey("channel_name")] = channel.name
-                this[intPreferencesKey("rounding")] = channel.chartRounding
-                this[stringPreferencesKey("field_names")] = fieldNamesJson
-                this[stringPreferencesKey("field_units")] = fieldUnitsJson
-                this[booleanPreferencesKey("is_refreshing")] = false
-                this[stringPreferencesKey("last_sync_status")] = channel.lastSyncStatus
-                channel.timezone?.let { this[stringPreferencesKey("channel_timezone")] = it }
-                
+                this[WidgetPrefsKeys.KEY_CHANNEL_ID] = channel.id
+                this[WidgetPrefsKeys.KEY_CHANNEL_NAME] = channel.name
+                this[WidgetPrefsKeys.KEY_ROUNDING] = channel.chartRounding
+                this[WidgetPrefsKeys.KEY_FIELD_NAMES] = fieldNamesJson
+                this[WidgetPrefsKeys.KEY_FIELD_UNITS] = fieldUnitsJson
+                this[WidgetPrefsKeys.KEY_IS_REFRESHING] = false
+                this[WidgetPrefsKeys.KEY_LAST_SYNC_STATUS] = channel.lastSyncStatus
+                channel.timezone?.let { this[WidgetPrefsKeys.KEY_CHANNEL_TIMEZONE] = it }
+
                 if (cachedEntryStr != null) {
-                    this[stringPreferencesKey("cached_entry")] = cachedEntryStr
+                    this[WidgetPrefsKeys.KEY_CACHED_ENTRY] = cachedEntryStr
                 }
-                
+
                 if (chartBitmapBase64 != null) {
-                    this[stringPreferencesKey("chart_bitmap")] = chartBitmapBase64
+                    this[WidgetPrefsKeys.KEY_CHART_BITMAP] = chartBitmapBase64
                 }
-                
-                // 2. PROTECT visual settings from being overwritten (Agent 2.1 Fix)
-                // We only set them if they don't exist yet (initial setup)
-                if (this[stringPreferencesKey("bg_color")] == null) {
-                    this[stringPreferencesKey("bg_color")] = channel.widgetBgColorHex ?: "#FFFFFF"
+
+                // PROTECT visual settings — only overwrite if user hasn't customized them via config screen
+                val isCustomized = this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] ?: false
+                if (!isCustomized) {
+                    this[WidgetPrefsKeys.KEY_BG_COLOR] = channel.widgetBgColorHex ?: "#FFFFFF"
+                    this[WidgetPrefsKeys.KEY_TEXT_COLOR] = channel.widgetTextColorHex ?: ""
+                    this[WidgetPrefsKeys.KEY_TRANSPARENCY] = channel.widgetTransparency
+                    this[WidgetPrefsKeys.KEY_FONT_SIZE] = channel.widgetFontSize
+                    this[WidgetPrefsKeys.KEY_IS_GLASS] = channel.isGlassmorphismEnabled ?: false
                 }
-                if (this[stringPreferencesKey("text_color")] == null) {
-                    this[stringPreferencesKey("text_color")] = channel.widgetTextColorHex ?: ""
-                }
-                if (this[floatPreferencesKey("transparency")] == null) {
-                    this[floatPreferencesKey("transparency")] = channel.widgetTransparency
-                }
-                if (this[intPreferencesKey("font_size")] == null) {
-                    this[intPreferencesKey("font_size")] = channel.widgetFontSize
-                }
-                if (this[booleanPreferencesKey("is_glass")] == null) {
-                    this[booleanPreferencesKey("is_glass")] = channel.isGlassmorphismEnabled ?: false
-                }
-                
-                // 3. SYNC visible fields only as INITIAL default if they don't exist in Preferences yet (Agent 2.1 Fix)
-                val currentVisible = this[stringSetPreferencesKey("visible_fields")]
+
+                val currentVisible = this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS]
                 if (currentVisible == null || currentVisible.isEmpty()) {
                     channel.widgetVisibleFields?.let { fields ->
-                        this[stringSetPreferencesKey("visible_fields")] = fields.map { it.toString() }.toSet()
+                        this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = fields.map { it.toString() }.toSet()
                     }
                 }
-                
-                // Always sync results count as it affects data loading
-                this[intPreferencesKey("chart_results")] = channel.chartResults ?: 60
-                
-                // 4. SYNC Alarms state (Agent 3.0)
-                this[stringSetPreferencesKey("violated_min_fields")] = violatedMinFields.map { it.toString() }.toSet()
-                this[stringSetPreferencesKey("violated_max_fields")] = violatedMaxFields.map { it.toString() }.toSet()
-                this[stringSetPreferencesKey("min_set_fields")] = minSetFields.map { it.toString() }.toSet()
-                this[stringSetPreferencesKey("max_set_fields")] = maxSetFields.map { it.toString() }.toSet()
+
+                this[WidgetPrefsKeys.KEY_CHART_RESULTS] = channel.chartResults ?: 60
+
+                this[WidgetPrefsKeys.KEY_VIOLATED_MIN_FIELDS] = violatedMinFields.map { it.toString() }.toSet()
+                this[WidgetPrefsKeys.KEY_VIOLATED_MAX_FIELDS] = violatedMaxFields.map { it.toString() }.toSet()
+                this[WidgetPrefsKeys.KEY_MIN_SET_FIELDS] = minSetFields.map { it.toString() }.toSet()
+                this[WidgetPrefsKeys.KEY_MAX_SET_FIELDS] = maxSetFields.map { it.toString() }.toSet()
             }
         }
         android.util.Log.i("TS_DEBUG", "updateWidgetPreferences: SUCCESS for channel ${channel.id}")

@@ -193,6 +193,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                             this[WidgetPrefsKeys.KEY_IS_GLASS] = isGlass
                                                             this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chResultsCount
                                                             this[WidgetPrefsKeys.KEY_IS_REFRESHING] = true
+                                                            this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
                                                         }
                                                     }
                                                     android.util.Log.d("NUCLEAR_V8", "Async: DataStore updated for $appWidgetId")

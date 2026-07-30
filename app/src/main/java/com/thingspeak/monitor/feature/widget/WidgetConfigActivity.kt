@@ -165,6 +165,7 @@ class WidgetConfigActivity : ComponentActivity() {
                             this[WidgetPrefsKeys.KEY_IS_REFRESHING] = true
                             this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chartResultsCount
                             this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = widgetVisibleFields.map { it.toString() }.toSet()
+                            this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
                             // Clear stale chart bitmap so widget shows "Loading Chart..." until
                             // DataSyncWorker generates a fresh one for the newly selected channel
                             this.remove(WidgetPrefsKeys.KEY_CHART_BITMAP)
