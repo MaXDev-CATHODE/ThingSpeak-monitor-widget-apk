@@ -115,7 +115,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                     val ch = savedChannels.find { it.id == channelId }
                                     repository.refreshFeed(channelId, key, chartTimespan = ch?.chartTimespan)
                                 } catch (e: Exception) {
-                                    android.util.Log.e("ValueGridWidgetConfig", "Failed to refresh metadata for $channelId", e)
+                                    android.util.Log.e("TS_DEBUG", "ValueGridWidgetConfig: refreshFeed failed for $channelId", e)
                                 }
                             }
                         },

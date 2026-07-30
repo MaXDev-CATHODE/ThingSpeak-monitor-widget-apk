@@ -5,8 +5,6 @@ import android.util.Log
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import com.thingspeak.monitor.feature.widget.WidgetBindingRepository
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 
 /**
  * Sniper-grade ID resolver to ensure consistent channel binding across all widget types and actions.
@@ -29,27 +27,5 @@ object WidgetIdResolver {
         val effective = if (boundId > 0) boundId else prefId
         Log.d(TAG, "Sync Resolve for $appWidgetId: bound=$boundId, pref=$prefId -> effective=$effective")
         return effective
-    }
-
-    /**
-     * Observes the effective channel ID as a Flow.
-     */
-    fun observe(
-        appWidgetId: Int,
-        bindingRepo: WidgetBindingRepository,
-        glancePrefs: Preferences
-    ): Flow<Long> {
-        android.util.Log.v("TS_DEBUG", "Resolver [OBSERVE_START] appWidgetId=$appWidgetId")
-        return bindingRepo.observeChannelId(appWidgetId).map { boundId ->
-            val prefId = glancePrefs[PREF_CHANNEL_ID] ?: -1L
-            val effective = if (boundId > 0) boundId else prefId
-            
-            if (effective <= 0L) {
-                android.util.Log.e("TS_DEBUG", "Resolver [FAILED] No ID for $appWidgetId (bound=$boundId, pref=$prefId)")
-            } else {
-                android.util.Log.d("TS_DEBUG", "Resolver [OK] $appWidgetId: bound=$boundId, pref=$prefId -> effective=$effective")
-            }
-            effective
-        }
     }
 }

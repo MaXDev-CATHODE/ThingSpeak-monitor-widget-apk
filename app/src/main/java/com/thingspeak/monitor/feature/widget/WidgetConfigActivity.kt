@@ -89,7 +89,9 @@ class WidgetConfigActivity : ComponentActivity() {
                         onRefreshRequest = { chanId, key ->
                             scope.launch { 
                                 val ch = allChannels.find { it.id == chanId }
-                                try { repository.refreshFeed(chanId, key, chartTimespan = ch?.chartTimespan) } catch (e: Exception) {} 
+                                try { repository.refreshFeed(chanId, key, chartTimespan = ch?.chartTimespan) } catch (e: Exception) { 
+                                    android.util.Log.e("TS_DEBUG", "WidgetConfig: refreshFeed failed for $chanId", e) 
+                                } 
                             }
                         },
                         onSave = { chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResults, alertRules ->
