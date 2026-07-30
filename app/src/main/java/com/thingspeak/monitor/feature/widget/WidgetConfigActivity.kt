@@ -10,10 +10,7 @@ import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.appwidget.updateAll
-import androidx.datastore.preferences.core.*
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.collect
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
 import com.thingspeak.monitor.core.datastore.SavedChannel
 import com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme
@@ -50,19 +47,18 @@ class WidgetConfigActivity : ComponentActivity() {
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return }
 
         scope.launch {
-            val glanceId = findGlanceId(appWidgetId)
+            val glanceId = findWidgetGlanceId(this, appWidgetId, widgetClasses = listOf(ThingSpeakGlanceWidget::class.java))
             val prefs = if (glanceId != null) getAppWidgetState<Preferences>(this@WidgetConfigActivity, WidgetPreferencesStateDefinition, glanceId) else null
             
-            val savedChannelId = prefs?.get(longPreferencesKey("channel_id"))
-            val savedBgColor = prefs?.get(stringPreferencesKey("bg_color"))
-            val savedTextColor = prefs?.get(stringPreferencesKey("text_color"))
-            val savedTransparency = prefs?.get(floatPreferencesKey("transparency"))
-            val savedFontSize = prefs?.get(intPreferencesKey("font_size"))
-            val savedIsGlass = prefs?.get(booleanPreferencesKey("is_glass"))
-            val savedVisibleFields = prefs?.get(stringSetPreferencesKey("visible_fields"))?.mapNotNull { it.toIntOrNull() }?.toSet()
+            val savedChannelId = prefs?.get(WidgetPrefsKeys.KEY_CHANNEL_ID)
+            val savedBgColor = prefs?.get(WidgetPrefsKeys.KEY_BG_COLOR)
+            val savedTextColor = prefs?.get(WidgetPrefsKeys.KEY_TEXT_COLOR)
+            val savedTransparency = prefs?.get(WidgetPrefsKeys.KEY_TRANSPARENCY)
+            val savedFontSize = prefs?.get(WidgetPrefsKeys.KEY_FONT_SIZE)
+            val savedIsGlass = prefs?.get(WidgetPrefsKeys.KEY_IS_GLASS)
+            val savedVisibleFields = prefs?.get(WidgetPrefsKeys.KEY_VISIBLE_FIELDS)?.mapNotNull { it.toIntOrNull() }?.toSet()
             
-            var initialChannels: List<SavedChannel> = emptyList()
-            channelPreferences.observe().take(1).collect { initialChannels = it }
+            var initialChannels = channelPreferences.observe().first()
             
             val initialAlertRules = if (savedChannelId != null) {
                 repository.getAlertRules(savedChannelId, null)
@@ -137,7 +133,7 @@ class WidgetConfigActivity : ComponentActivity() {
                     id = channelId,
                     name = channelName,
                     apiKey = apiKey,
-                    lastSyncStatus = "NONE",
+                    lastSyncStatus = WidgetPrefsKeys.STATUS_NONE,
                     lastSyncTime = System.currentTimeMillis()
                 )
                 channelPreferences.save(updatedChannel)
@@ -155,28 +151,28 @@ class WidgetConfigActivity : ComponentActivity() {
                 }
 
                 val appContext = applicationContext
-                val gId = findGlanceId(appWidgetId)
+                val gId = findWidgetGlanceId(appContext, appWidgetId, widgetClasses = listOf(ThingSpeakGlanceWidget::class.java))
                 if (gId != null) {
                     updateAppWidgetState(appContext, WidgetPreferencesStateDefinition, gId) { p ->
                         p.toMutablePreferences().apply {
-                            this[longPreferencesKey("channel_id")] = channelId
-                            this[stringPreferencesKey("channel_name")] = channelName
-                            this[stringPreferencesKey("bg_color")] = widgetBgColorHex ?: "#FFFFFF"
-                            this[stringPreferencesKey("text_color")] = widgetTextColorHex ?: ""
-                            this[floatPreferencesKey("transparency")] = widgetTransparency
-                            this[intPreferencesKey("font_size")] = widgetFontSize
-                            this[booleanPreferencesKey("is_glass")] = isGlass
-                            this[intPreferencesKey("chart_results")] = chartResultsCount
-                            this[stringSetPreferencesKey("visible_fields")] = widgetVisibleFields.map { it.toString() }.toSet()
+                            this[WidgetPrefsKeys.KEY_CHANNEL_ID] = channelId
+                            this[WidgetPrefsKeys.KEY_CHANNEL_NAME] = channelName
+                            this[WidgetPrefsKeys.KEY_BG_COLOR] = widgetBgColorHex ?: "#FFFFFF"
+                            this[WidgetPrefsKeys.KEY_TEXT_COLOR] = widgetTextColorHex ?: ""
+                            this[WidgetPrefsKeys.KEY_TRANSPARENCY] = widgetTransparency
+                            this[WidgetPrefsKeys.KEY_FONT_SIZE] = widgetFontSize
+                            this[WidgetPrefsKeys.KEY_IS_GLASS] = isGlass
+                            this[WidgetPrefsKeys.KEY_IS_REFRESHING] = true
+                            this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chartResultsCount
+                            this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = widgetVisibleFields.map { it.toString() }.toSet()
                             // Clear stale chart bitmap so widget shows "Loading Chart..." until
                             // DataSyncWorker generates a fresh one for the newly selected channel
-                            this.remove(stringPreferencesKey("chart_bitmap"))
+                            this.remove(WidgetPrefsKeys.KEY_CHART_BITMAP)
                         }
                     }
                 }
                 
                 ThingSpeakGlanceWidget().updateAll(appContext)
-                ValueGridWidget().updateAll(appContext)
 
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     setResult(Activity.RESULT_OK, Intent().apply { putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId) })
@@ -184,13 +180,6 @@ class WidgetConfigActivity : ComponentActivity() {
                 }
             } catch (e: Exception) { finish() }
         }
-    }
-
-    private suspend fun findGlanceId(appWidgetId: Int): androidx.glance.GlanceId? {
-        return try {
-            val manager = GlanceAppWidgetManager(this)
-            manager.getGlanceIdBy(appWidgetId)
-        } catch (e: Exception) { null }
     }
 
     override fun onDestroy() { super.onDestroy(); scope.cancel() }

@@ -1,5 +1,6 @@
 package com.thingspeak.monitor.feature.widget
 
+import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
@@ -26,18 +27,11 @@ import com.thingspeak.monitor.core.datastore.ChannelPreferences
 import com.thingspeak.monitor.core.datastore.SavedChannel
 import com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme
 import com.thingspeak.monitor.core.worker.DataSyncWorker
+import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.floatPreferencesKey
-import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
-
-import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 
 @AndroidEntryPoint
 class ValueGridWidgetConfigActivity : ComponentActivity() {
@@ -56,7 +50,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         val intent = intent
         val extras = intent.extras
         if (extras != null) {
@@ -84,23 +78,25 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                     val savedChannels by channelPreferences.observe().collectAsState(initial = emptyList())
                     var isSaving by remember { mutableStateOf(false) }
                     val coroutineScope = rememberCoroutineScope()
-                    
+
                     var initialPrefs by remember { mutableStateOf<androidx.datastore.preferences.core.Preferences?>(null) }
                     LaunchedEffect(appWidgetId) {
-                        val gId = findGlanceId(appWidgetId)
+                        val gId = findWidgetGlanceId(this@ValueGridWidgetConfigActivity, appWidgetId, widgetClasses = listOf(ValueGridWidget::class.java))
                         if (gId != null) {
-                            initialPrefs = androidx.glance.appwidget.state.getAppWidgetState<androidx.datastore.preferences.core.Preferences>(this@ValueGridWidgetConfigActivity, WidgetPreferencesStateDefinition, gId)
+                            initialPrefs = androidx.glance.appwidget.state.getAppWidgetState(
+                                this@ValueGridWidgetConfigActivity, WidgetPreferencesStateDefinition, gId
+                            )
                         }
                     }
 
-                    val savedChannelId = initialPrefs?.get(longPreferencesKey("channel_id"))
-                    val savedBgColor = initialPrefs?.get(stringPreferencesKey("bg_color"))
-                    val savedTextColor = initialPrefs?.get(stringPreferencesKey("text_color"))
-                    val savedTransparency = initialPrefs?.get(floatPreferencesKey("transparency"))
-                    val savedFontSize = initialPrefs?.get(intPreferencesKey("font_size"))
-                    val savedIsGlass = initialPrefs?.get(booleanPreferencesKey("is_glass"))
-                    val savedVisibleFields = initialPrefs?.get(stringSetPreferencesKey("visible_fields"))?.mapNotNull { it.toIntOrNull() }?.toSet()
-                    
+                    val savedChannelId = initialPrefs?.get(WidgetPrefsKeys.KEY_CHANNEL_ID)
+                    val savedBgColor = initialPrefs?.get(WidgetPrefsKeys.KEY_BG_COLOR)
+                    val savedTextColor = initialPrefs?.get(WidgetPrefsKeys.KEY_TEXT_COLOR)
+                    val savedTransparency = initialPrefs?.get(WidgetPrefsKeys.KEY_TRANSPARENCY)
+                    val savedFontSize = initialPrefs?.get(WidgetPrefsKeys.KEY_FONT_SIZE)
+                    val savedIsGlass = initialPrefs?.get(WidgetPrefsKeys.KEY_IS_GLASS)
+                    val savedVisibleFields = initialPrefs?.get(WidgetPrefsKeys.KEY_VISIBLE_FIELDS)?.mapNotNull { it.toIntOrNull() }?.toSet()
+
                     val existing = savedChannelId?.let { idVal -> savedChannels.find { it.id == idVal } }
 
                     val initialAlertRules by if (savedChannelId != null) {
@@ -109,8 +105,6 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                         remember { mutableStateOf(emptyList<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>()) }
                     }
 
-                    // We will reuse WidgetConfigScreen but probably modify it later to hide Chart Selection totally
-                    // or just use it as is since Chart Selection was removed for now
                     WidgetConfigScreen(
                         isSaving = isSaving,
                         isGridMode = true,
@@ -151,68 +145,61 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                             id = channelId,
                                             name = name,
                                             apiKey = apiKey,
-                                            lastSyncStatus = "NONE",
+                                            lastSyncStatus = WidgetPrefsKeys.STATUS_NONE,
                                             lastSyncTime = System.currentTimeMillis()
                                         )
                                         channelPreferences.save(updatedChannel)
-                                        android.util.Log.d("NUCLEAR_V8", "1. Core Channel info saved for $channelId (Visuals skipped for isolation)")
+                                        android.util.Log.d("NUCLEAR_V8", "1. Core Channel info saved for $channelId")
 
                                         // 2. Alert Rules saving (Unified - Global per channel)
                                         repository.deleteGlobalAlertRules(channelId)
-                                        
-                                        // Save new rules
                                         alertRules.forEach { rule ->
                                             repository.saveAlertRule(rule.copy(appWidgetId = null))
                                         }
-                                        android.util.Log.d("NUCLEAR_V8", "Unified Alarms: Saved ${alertRules.size} rules for channel $channelId")
+                                        android.util.Log.d("NUCLEAR_V8", "Unified Alarms: Drawn ${alertRules.size} rules for channel $channelId")
 
-                                        // 3. CRITICAL SYNC BINDING (NUCLEAR V8)
-                                        // We WAIT for this to finish before allowing the activity to close.
-                                        // This ensures the widget will see the binding when it refreshes.
+                                        // 3. Save binding synchronicly
                                         widgetBindingRepository.saveBinding(appWidgetId, channelId)
                                         android.util.Log.d("NUCLEAR_V8", "3. Binding DB saved synchronicly: $appWidgetId -> $channelId")
 
-                                        // Sync with Room DB for app UI consistency (Core Info Only)
+                                        // Sync with Room DB for app UI consistency
                                         repository.observeChannel(channelId).first()?.let { roomChannel ->
                                             repository.updateChannel(roomChannel.copy(
                                                 name = name,
                                                 apiKey = apiKey
-                                                // Skipping visual fields to maintain isolation (Agent 2.1 Fix)
                                             ))
                                         }
 
-                                        // 4. Launch heavy/async background tasks
-                                        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+                                        // 4. Launch fire-and-forget background sync (standalone scope)
                                         val appContext = applicationContext
-                                        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+                                        kotlinx.coroutines.CoroutineScope(
+                                            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+                                        ).launch {
                                             try {
-                                                android.util.Log.e("NUCLEAR_V8", ">>> STARTING ASYNC SYNC V8 for $appWidgetId")
-                                                
-                                                // Update Glance State (Best Effort)
-                                                val gId = findGlanceId(appWidgetId)
+                                                android.util.Log.d("NUCLEAR_V8", ">>> STARTING ASYNC SYNC V8 for $appWidgetId")
+
+                                                // Update Glance DataStore
+                                                val gId = findWidgetGlanceId(appContext, appWidgetId, widgetClasses = listOf(ValueGridWidget::class.java))
                                                 if (gId != null) {
                                                     updateAppWidgetState(appContext, WidgetPreferencesStateDefinition, gId) { p ->
                                                         p.toMutablePreferences().apply {
-                                                            this[longPreferencesKey("channel_id")] = channelId
-                                                            this[stringPreferencesKey("api_key")] = apiKey ?: ""
-                                                            this[stringPreferencesKey("channel_name")] = name
-                                                            this[stringPreferencesKey("bg_color")] = bgColor ?: "#FFFFFF"
-                                                            this[stringPreferencesKey("text_color")] = txtColor ?: ""
-                                                            this[floatPreferencesKey("transparency")] = transparency
-                                                            this[intPreferencesKey("font_size")] = fontSize
-                                                            this[stringSetPreferencesKey("visible_fields")] = visibleFields.map { it.toString() }.toSet()
-                                                            this[intPreferencesKey("chart_field")] = chartField
-                                                            this[booleanPreferencesKey("is_glass")] = isGlass
-                                                            this[intPreferencesKey("chart_timespan")] = chartTimespan
-                                                            this[intPreferencesKey("chart_results")] = chResultsCount
-                                                            this[booleanPreferencesKey("is_refreshing")] = true
+                                                            this[WidgetPrefsKeys.KEY_CHANNEL_ID] = channelId
+                                                            this[WidgetPrefsKeys.KEY_CHANNEL_NAME] = name
+                                                            this[WidgetPrefsKeys.KEY_BG_COLOR] = bgColor ?: "#FFFFFF"
+                                                            this[WidgetPrefsKeys.KEY_TEXT_COLOR] = txtColor ?: ""
+                                                            this[WidgetPrefsKeys.KEY_TRANSPARENCY] = transparency
+                                                            this[WidgetPrefsKeys.KEY_FONT_SIZE] = fontSize
+                                                            this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = visibleFields.map { it.toString() }.toSet()
+                                                            this[WidgetPrefsKeys.KEY_IS_GLASS] = isGlass
+                                                            this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chResultsCount
+                                                            this[WidgetPrefsKeys.KEY_IS_REFRESHING] = true
                                                         }
                                                     }
                                                     android.util.Log.d("NUCLEAR_V8", "Async: DataStore updated for $appWidgetId")
                                                 }
-                                                
+
                                                 ValueGridWidget().updateAll(appContext)
-                                                
+
                                                 // SYSTEM SIGNAL
                                                 val updateIntent = Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
                                                     putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
@@ -221,10 +208,17 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                 appContext.sendBroadcast(updateIntent)
                                                 android.util.Log.d("NUCLEAR_V8", "Async: System signals sent.")
 
-                                                // Background Refresh
+                                                // Refresh feed and enqueue worker via proper WorkManager API
                                                 repository.refreshFeed(channelId, apiKey, chartTimespan = chartTimespanStr)
-                                                com.thingspeak.monitor.core.worker.DataSyncWorker.runOnce(appContext)
-                                                android.util.Log.e("NUCLEAR_V8", "Async: Worker enqueued.")
+
+                                                val workRequest = OneTimeWorkRequestBuilder<DataSyncWorker>().build()
+                                                WorkManager.getInstance(appContext)
+                                                    .enqueueUniqueWork(
+                                                        "value_grid_config_refresh_$appWidgetId",
+                                                        ExistingWorkPolicy.REPLACE,
+                                                        workRequest
+                                                    )
+                                                android.util.Log.d("NUCLEAR_V8", "Async: Worker enqueued via WorkManager.")
                                             } catch (e: Exception) {
                                                 android.util.Log.e("NUCLEAR_V8", "Async: FATAL ERROR", e)
                                                 ValueGridWidget().updateAll(appContext)
@@ -238,7 +232,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                 putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                                             }
                                             setResult(RESULT_OK, resultIntent)
-                                            android.util.Log.e("NUCLEAR_V8", ">>> RESULT_OK sent to system. Finishing Activity.")
+                                            android.util.Log.d("NUCLEAR_V8", ">>> RESULT_OK sent. Finishing.")
                                             finish()
                                         }
 
@@ -255,39 +249,6 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    private suspend fun findGlanceId(appWidgetId: Int): androidx.glance.GlanceId? {
-        var retries = 5
-        while (retries > 0) {
-            try {
-                val manager = GlanceAppWidgetManager(this)
-                // Strategy 1: Official way
-                val officialId = manager.getGlanceIdBy(appWidgetId)
-                if (officialId != null) {
-                    android.util.Log.d("ValueGridConfig", "Found GlanceId via official way for $appWidgetId")
-                    return officialId
-                }
-                
-                // Strategy 2: Search ValueGridWidget instances
-                val foundId = manager.getGlanceIds(ValueGridWidget::class.java).find { 
-                    manager.getAppWidgetId(it) == appWidgetId 
-                }
-                
-                if (foundId != null) {
-                    android.util.Log.d("ValueGridConfig", "Found GlanceId via exhaustive search for $appWidgetId")
-                    return foundId
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("ValueGridConfig", "Error searching for GlanceId for $appWidgetId", e)
-            }
-
-            android.util.Log.w("ValueGridConfig", "GlanceId not found for $appWidgetId, retrying... ($retries left)")
-            kotlinx.coroutines.delay(100)
-            retries--
-        }
-        android.util.Log.e("ValueGridConfig", "FAILED to find GlanceId for $appWidgetId after all retries")
-        return null
     }
 
     override fun onDestroy() {
