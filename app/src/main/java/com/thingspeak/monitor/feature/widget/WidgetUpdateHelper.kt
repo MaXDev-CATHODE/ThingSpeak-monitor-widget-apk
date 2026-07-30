@@ -170,6 +170,8 @@ object WidgetUpdateHelper {
                 this[WidgetPrefsKeys.KEY_VIOLATED_MAX_FIELDS] = violatedMaxFields.map { it.toString() }.toSet()
                 this[WidgetPrefsKeys.KEY_MIN_SET_FIELDS] = minSetFields.map { it.toString() }.toSet()
                 this[WidgetPrefsKeys.KEY_MAX_SET_FIELDS] = maxSetFields.map { it.toString() }.toSet()
+
+                this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = true
             }
         }
         android.util.Log.i("TS_DEBUG", "updateWidgetPreferences: SUCCESS for channel ${channel.id}")

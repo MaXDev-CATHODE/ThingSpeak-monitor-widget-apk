@@ -44,4 +44,5 @@ object WidgetPrefsKeys {
     const val ALERT_CONDITION_GREATER_THAN = "GREATER_THAN"
 
     val KEY_WIDGET_VISUALS_CUSTOMIZED: Preferences.Key<Boolean> = booleanPreferencesKey("widget_visuals_customized")
+    val KEY_HEAL_ATTEMPTED: Preferences.Key<Boolean> = booleanPreferencesKey("_heal_attempted")
 }

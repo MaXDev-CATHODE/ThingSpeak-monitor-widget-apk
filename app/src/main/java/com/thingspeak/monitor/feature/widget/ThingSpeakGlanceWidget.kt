@@ -30,9 +30,10 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
             val prefs = androidx.glance.currentState<androidx.datastore.preferences.core.Preferences>()
             val data = loadWidgetDataFromPreferences(prefs, boundChannelId, realSyncIntervalMinutes)
 
-            // Self-Healing: trigger repair if prefs are empty/stale
+            // Self-Healing: trigger repair if prefs are empty/stale (one-shot guarded)
+            val healAttempted = prefs[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] ?: false
             if (data.channelName == WidgetPrefsKeys.LOADING_PLACEHOLDER &&
-                boundChannelId != -1L && !data.isRefreshing
+                boundChannelId != -1L && !data.isRefreshing && !healAttempted
             ) {
                 androidx.compose.runtime.LaunchedEffect(boundChannelId) {
                     updateAppWidget(context, appWidgetId)
