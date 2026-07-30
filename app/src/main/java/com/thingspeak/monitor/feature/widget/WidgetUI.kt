@@ -23,6 +23,10 @@ import com.thingspeak.monitor.feature.channel.data.local.FeedEntryEntity
 import androidx.glance.Button
 import androidx.glance.text.TextAlign
 import androidx.glance.unit.ColorProvider as GColor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 data class WidgetData(
     val channelName: String?,

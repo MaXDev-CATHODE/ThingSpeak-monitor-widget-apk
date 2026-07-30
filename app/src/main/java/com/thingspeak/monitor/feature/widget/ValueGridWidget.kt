@@ -22,7 +22,6 @@ import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import androidx.datastore.preferences.core.toMutablePreferences
 
 class ValueGridWidget : GlanceAppWidget() {
     override val stateDefinition: GlanceStateDefinition<*> = WidgetPreferencesStateDefinition
