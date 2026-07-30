@@ -58,7 +58,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
                                 p.toMutablePreferences().apply {
                                     if (this[WidgetPrefsKeys.KEY_CHANNEL_ID] != boundId) {
                                         this[WidgetPrefsKeys.KEY_CHANNEL_ID] = boundId
-                                        Log.e("TS_DEBUG", "PUSHED binding to Glance for standard $id -> $boundId")
+                                        Log.i("TS_DEBUG", "PUSHED binding to Glance for standard $id -> $boundId")
                                     }
                                 }
                             }
