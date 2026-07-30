@@ -340,32 +340,5 @@ fun ValueTile(
     }
 }
 
-class GridRefreshAction : androidx.glance.appwidget.action.ActionCallback {
-    override suspend fun onAction(
-        context: Context,
-        glanceId: androidx.glance.GlanceId,
-        parameters: androidx.glance.action.ActionParameters
-    ) {
-        performWidgetRefreshAction(
-            context = context,
-            glanceId = glanceId,
-            updateWidget = { ValueGridWidget().update(context, glanceId) },
-            uniqueWorkPrefix = "widget_grid_refresh_sync"
-        )
-    }
-}
-
-class GridEditAction : androidx.glance.appwidget.action.ActionCallback {
-    override suspend fun onAction(
-        context: Context,
-        glanceId: androidx.glance.GlanceId,
-        parameters: androidx.glance.action.ActionParameters
-    ) {
-        val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
-        val intent = android.content.Intent(context, ValueGridWidgetConfigActivity::class.java).apply {
-            putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        context.startActivity(intent)
-    }
-}
+class GridRefreshAction : RefreshWidgetAction({ ValueGridWidget() }, "widget_grid_refresh_sync")
+class GridEditAction : EditWidgetAction(ValueGridWidgetConfigActivity::class.java)

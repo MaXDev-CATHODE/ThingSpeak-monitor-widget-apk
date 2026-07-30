@@ -291,32 +291,5 @@ fun WidgetUI(data: WidgetData) {
     }
 }
 
-class RefreshAction : androidx.glance.appwidget.action.ActionCallback {
-    override suspend fun onAction(
-        context: android.content.Context,
-        glanceId: androidx.glance.GlanceId,
-        parameters: androidx.glance.action.ActionParameters
-    ) {
-        performWidgetRefreshAction(
-            context = context,
-            glanceId = glanceId,
-            updateWidget = { ThingSpeakGlanceWidget().update(context, glanceId) },
-            uniqueWorkPrefix = "glance_refresh_sync"
-        )
-    }
-}
-
-class EditActionV2 : androidx.glance.appwidget.action.ActionCallback {
-    override suspend fun onAction(
-        context: android.content.Context,
-        glanceId: androidx.glance.GlanceId,
-        parameters: androidx.glance.action.ActionParameters
-    ) {
-        val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
-        val intent = android.content.Intent(context, WidgetConfigActivity::class.java).apply {
-            putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        context.startActivity(intent)
-    }
-}
+class RefreshAction : RefreshWidgetAction({ ThingSpeakGlanceWidget() }, "glance_refresh_sync")
+class EditActionV2 : EditWidgetAction(WidgetConfigActivity::class.java)
