@@ -8,16 +8,14 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import java.util.concurrent.TimeUnit
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -37,7 +35,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
 
     override val glanceAppWidget: GlanceAppWidget = ThingSpeakGlanceWidget()
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
@@ -55,16 +53,18 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
                     val boundId = repository.getBindingSync(id)
                     if (boundId > 0) {
                         val gId = GlanceAppWidgetManager(context).getGlanceIdBy(id)
-                        updateAppWidgetState(context, WidgetPreferencesStateDefinition, gId) { p ->
-                            p.toMutablePreferences().apply {
-                                if (this[longPreferencesKey("channel_id")] != boundId) {
-                                    this[longPreferencesKey("channel_id")] = boundId
-                                    Log.e("NUCLEAR_V8", "PUSHED binding to Glance for standard $id -> $boundId")
+                        if (gId != null) {
+                            updateAppWidgetState(context, WidgetPreferencesStateDefinition, gId) { p ->
+                                p.toMutablePreferences().apply {
+                                    if (this[WidgetPrefsKeys.KEY_CHANNEL_ID] != boundId) {
+                                        this[WidgetPrefsKeys.KEY_CHANNEL_ID] = boundId
+                                        Log.e("NUCLEAR_V8", "PUSHED binding to Glance for standard $id -> $boundId")
+                                    }
                                 }
                             }
+                            // Trigger immediate refresh for this specific widget if it's new/stale
+                            ThingSpeakGlanceWidget().update(context, gId)
                         }
-                        // Trigger immediate refresh for this specific widget if it's new/stale
-                        ThingSpeakGlanceWidget().update(context, gId)
                     }
                 } catch (e: Exception) {
                     Log.e("NUCLEAR_V8", "Failed to push binding for standard $id", e)
@@ -88,22 +88,45 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
         super.onDeleted(context, appWidgetIds)
         android.util.Log.i("TS_DEBUG", "WidgetReceiver onDeleted: ids=${appWidgetIds.joinToString()}")
         val manager = AppWidgetManager.getInstance(context)
-        val remaining = manager.getAppWidgetIds(
+
+        // Check remaining active ThingSpeakGlanceWidget instances
+        val remainingGlanceWidgets = manager.getAppWidgetIds(
             android.content.ComponentName(context, WidgetReceiver::class.java)
         )
-        if (remaining.isEmpty()) {
+        // Check remaining active ValueGridWidget instances
+        val remainingValueGridWidgets = manager.getAppWidgetIds(
+            android.content.ComponentName(context, ValueGridWidgetReceiver::class.java)
+        )
+
+        // Cancel periodic work only when no widgets of either type remain active
+        if (remainingGlanceWidgets.isEmpty() && remainingValueGridWidgets.isEmpty()) {
             WorkManager.getInstance(context).cancelUniqueWork(com.thingspeak.monitor.core.worker.DataSyncWorker.WORK_NAME)
-            android.util.Log.w("TS_DEBUG", "WidgetReceiver: Last widget removed — periodic refresh cancelled")
+            android.util.Log.w("TS_DEBUG", "WidgetReceiver: Last widget of any type removed — periodic refresh cancelled")
         }
+
+        appWidgetIds.forEach { id ->
+            scope.launch {
+                try {
+                    repository.removeBinding(id)
+                    Log.i("TS_DEBUG", "WidgetReceiver: cleaned Room binding for $id")
+                } catch (e: Exception) {
+                    Log.e("TS_DEBUG", "WidgetReceiver: failed to clean Room binding for $id", e)
+                }
+            }
+        }
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        scope.cancel()
     }
 
     companion object {
         private const val TAG = "WidgetReceiver"
+        private val periodicScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun enqueuePeriodicRefresh(context: Context) {
-            // Read the user-configured sync interval from AppPreferences via EntryPointAccessors,
-            // following the same pattern used in RescheduleWorker.doWork().
-            CoroutineScope(Dispatchers.IO).launch {
+            periodicScope.launch {
                 val entryPoint = EntryPointAccessors.fromApplication(
                     context.applicationContext,
                     com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
@@ -121,7 +144,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
          * Fire-and-forget, runs on Dispatchers.IO (blocking .get() is safe here).
          */
         fun enqueuePeriodicRefreshIfNeeded(context: Context) {
-            CoroutineScope(Dispatchers.IO).launch {
+            periodicScope.launch {
                 val workInfos = WorkManager.getInstance(context)
                     .getWorkInfosForUniqueWork(com.thingspeak.monitor.core.worker.DataSyncWorker.WORK_NAME)
                     .get() // blocking, safe on Dispatchers.IO
