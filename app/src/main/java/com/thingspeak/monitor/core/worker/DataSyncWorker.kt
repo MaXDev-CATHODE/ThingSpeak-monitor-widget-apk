@@ -9,7 +9,6 @@ import com.thingspeak.monitor.core.datastore.ChannelPreferences
 import com.thingspeak.monitor.core.notifications.AlertManager
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 import com.thingspeak.monitor.feature.widget.ThingSpeakGlanceWidget
-import com.thingspeak.monitor.feature.widget.WidgetChartGenerator
 import com.thingspeak.monitor.feature.channel.domain.model.toSavedChannel
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -52,7 +51,7 @@ class DataSyncWorker @AssistedInject constructor(
                 }.awaitAll()
             }
 
-            updateAllWidgets()
+            finishAllWidgets()
             android.util.Log.i(TAG, "DataSyncWorker SUCCESS: All channels processed.")
             return Result.success()
         } catch (e: Exception) {
@@ -100,7 +99,7 @@ class DataSyncWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun updateAllWidgets() {
+    private suspend fun finishAllWidgets() {
         try {
             val manager = GlanceAppWidgetManager(applicationContext)
             val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(
@@ -116,16 +115,11 @@ class DataSyncWorker @AssistedInject constructor(
                     val appWidgetId = manager.getAppWidgetId(id)
                     if (bindingRepo.getBindingSync(appWidgetId) != -1L) {
                         clearRefreshingState(id)
-                        when (widgetClass) {
-                            ThingSpeakGlanceWidget::class.java -> ThingSpeakGlanceWidget().update(applicationContext, id)
-                            com.thingspeak.monitor.feature.widget.ValueGridWidget::class.java ->
-                                com.thingspeak.monitor.feature.widget.ValueGridWidget().update(applicationContext, id)
-                        }
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "UI Update failed", e)
+            Log.w(TAG, "finishAllWidgets: clearing refreshing state failed", e)
         }
     }
 

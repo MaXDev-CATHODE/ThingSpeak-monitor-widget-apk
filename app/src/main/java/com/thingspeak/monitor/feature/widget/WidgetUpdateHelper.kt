@@ -157,7 +157,7 @@ object WidgetUpdateHelper {
         context: Context,
         appWidgetId: Int,
         widgetInstanceFactory: () -> androidx.glance.appwidget.GlanceAppWidget,
-        onGenerateChart: suspend (SavedChannel, Long) -> String? = { _, _ -> null }
+        onGenerateChart: suspend (SavedChannel, Long, List<FeedEntry>) -> String? = { _, _, _ -> null }
     ) {
         val entryPoint = EntryPointAccessors.fromApplication(
             context.applicationContext, WidgetEntryPoint::class.java
@@ -190,7 +190,7 @@ object WidgetUpdateHelper {
             ?: emptyList<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>()
 
         // Chart generation (only for chart widget; grid widgets get null)
-        val chartFile = onGenerateChart(channel, channelId)
+        val chartFile = onGenerateChart(channel, channelId, feeds)
 
         // Resolve chartResults from existing prefs (preserve user setting)
         val prefs = getAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId)

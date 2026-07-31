@@ -50,8 +50,10 @@ object WidgetChartGenerator {
     ): Bitmap? {
         if (entries.isEmpty()) return null
 
+        val sortedEntries = entries.sortedBy { it.createdAt }
+
         val seriesWithData = fieldIndices.filter { idx ->
-            entries.count { it.fields[idx]?.toDoubleOrNull() != null } >= 2
+            sortedEntries.count { it.fields[idx]?.toDoubleOrNull() != null } >= 2
         }
         if (seriesWithData.isEmpty()) return null
 
@@ -68,7 +70,7 @@ object WidgetChartGenerator {
         )
 
         val (globalMin, globalMax) = if (!isNormalized) {
-            computeGlobalRange(entries, fieldIndices)
+            computeGlobalRange(sortedEntries, fieldIndices)
         } else {
             Pair(0.0, 1.0)
         }
@@ -76,7 +78,7 @@ object WidgetChartGenerator {
         seriesWithData.sorted().forEach { fieldIdx ->
             val colorStr = fieldColorsOverride?.get(fieldIdx)
                 ?: defaultFieldColors.getOrElse(fieldIdx - 1) { "#808080" }
-            val rawDataPoints = entries.mapNotNull { it.fields[fieldIdx]?.toDoubleOrNull() }
+            val rawDataPoints = sortedEntries.mapNotNull { it.fields[fieldIdx]?.toDoubleOrNull() }
             if (rawDataPoints.size < 2) return@forEach
 
             val dataPoints = if (rawDataPoints.size > 100) {

@@ -19,21 +19,18 @@ const val WIDGET_LOG_TAG = "TS_DEBUG"
 const val DEFAULT_SYNC_INTERVAL_MINUTES = 30L
 
 private val refreshTimeoutJobs = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.Job>()
-private val activeRefreshes = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+private val activeRefreshes = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
 
 fun cancelRefreshTimeout(appWidgetId: Int) {
-    synchronized(refreshTimeoutJobsLock) { refreshTimeoutJobs.remove(appWidgetId)?.cancel() }
+    refreshTimeoutJobs.remove(appWidgetId)?.cancel()
     activeRefreshes.remove(appWidgetId)
 }
 
 /** Must be called when a refresh completes (success or failure) to prevent map leak. */
 fun onRefreshCompleted(appWidgetId: Int) {
-    synchronized(refreshTimeoutJobsLock) { refreshTimeoutJobs.remove(appWidgetId) }
+    refreshTimeoutJobs.remove(appWidgetId)
     activeRefreshes.remove(appWidgetId)
 }
-
-/** Lock object shared with the timeout scheduling code below. */
-@PublishedApi internal val refreshTimeoutJobsLock = Any()
 
 fun isSystemDarkMode(context: Context): Boolean {
     val nightMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
@@ -369,7 +366,7 @@ suspend fun performWidgetRefreshAction(
     }
 
     // Fallback timeout: clear refreshing after 60s if worker didn't finish (previous job cancelled on re-tap)
-    synchronized(refreshTimeoutJobsLock) { refreshTimeoutJobs.remove(appWidgetId)?.cancel() }
+    refreshTimeoutJobs.remove(appWidgetId)?.cancel()
     val timeoutJob = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
         delay(60_000)
         onRefreshCompleted(appWidgetId)
@@ -383,5 +380,5 @@ suspend fun performWidgetRefreshAction(
             updateWidget()
         }
     }
-    synchronized(refreshTimeoutJobsLock) { refreshTimeoutJobs[appWidgetId] = timeoutJob }
+    refreshTimeoutJobs[appWidgetId] = timeoutJob
 }

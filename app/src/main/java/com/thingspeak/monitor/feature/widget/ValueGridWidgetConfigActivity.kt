@@ -17,9 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.appwidget.updateAll
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -29,7 +27,6 @@ import com.thingspeak.monitor.core.worker.DataSyncWorker
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.EntryPointAccessors
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -47,12 +44,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
     lateinit var repository: ChannelRepository
 
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
-    private var isConfigurationDone = false
     private val saveGuard = java.util.concurrent.atomic.AtomicBoolean(false)
-    private val asyncScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
-    )
-
     private val lastRefreshTimestamp = java.util.concurrent.atomic.AtomicLong(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,54 +158,42 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                             alertRules = alertRules
                                         )
 
-                                        // Launch background sync via tracked scope
                                         val appContext = applicationContext
-                                        asyncScope.launch {
-                                            try {
-                                                android.util.Log.d(WIDGET_LOG_TAG, ">>> STARTING ASYNC SYNC V8 for $appWidgetId")
 
-                                                // Update Glance DataStore
-                                                val gId = findWidgetGlanceId(appContext, appWidgetId, widgetClasses = listOf(ValueGridWidget::class.java))
-                                                if (gId != null) {
-                                                    updateAppWidgetState(appContext, WidgetPreferencesStateDefinition, gId) { p ->
-                                                        p.toMutablePreferences().apply {
-                                                            this[WidgetPrefsKeys.KEY_CHANNEL_ID] = channelId
-                                                            this[WidgetPrefsKeys.KEY_CHANNEL_NAME] = name
-                                                            this[WidgetPrefsKeys.KEY_BG_COLOR] = bgColor ?: "#FFFFFF"
-                                                            this[WidgetPrefsKeys.KEY_TEXT_COLOR] = txtColor ?: ""
-                                                            this[WidgetPrefsKeys.KEY_TRANSPARENCY] = transparency
-                                                            this[WidgetPrefsKeys.KEY_FONT_SIZE] = fontSize
-                                                            this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = visibleFields.map { it.toString() }.toSet()
-                                                            this[WidgetPrefsKeys.KEY_IS_GLASS] = isGlass
-                                                            this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chResultsCount
-                                                            this[WidgetPrefsKeys.KEY_IS_REFRESHING] = true
-                                                            this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
-                                                            this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
-                                                        }
-                                                    }
-                                                    android.util.Log.d(WIDGET_LOG_TAG, "Async: DataStore updated for $appWidgetId")
+                                        val gId = findWidgetGlanceId(appContext, appWidgetId, widgetClasses = listOf(ValueGridWidget::class.java))
+                                        if (gId != null) {
+                                            updateAppWidgetState(appContext, WidgetPreferencesStateDefinition, gId) { p ->
+                                                p.toMutablePreferences().apply {
+                                                    this[WidgetPrefsKeys.KEY_CHANNEL_ID] = channelId
+                                                    this[WidgetPrefsKeys.KEY_CHANNEL_NAME] = name
+                                                    this[WidgetPrefsKeys.KEY_BG_COLOR] = bgColor ?: "#FFFFFF"
+                                                    this[WidgetPrefsKeys.KEY_TEXT_COLOR] = txtColor ?: ""
+                                                    this[WidgetPrefsKeys.KEY_TRANSPARENCY] = transparency
+                                                    this[WidgetPrefsKeys.KEY_FONT_SIZE] = fontSize
+                                                    this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = visibleFields.map { it.toString() }.toSet()
+                                                    this[WidgetPrefsKeys.KEY_IS_GLASS] = isGlass
+                                                    this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chResultsCount
+                                                    this[WidgetPrefsKeys.KEY_IS_REFRESHING] = true
+                                                    this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
+                                                    this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
                                                 }
-
-                                                // Enqueue worker for immediate one-shot sync
-                                                val workRequest = OneTimeWorkRequestBuilder<DataSyncWorker>()
-                                                    .setConstraints(DataSyncWorker.constraints())
-                                                    .build()
-                                                WorkManager.getInstance(appContext)
-                                                    .enqueueUniqueWork(
-                                                        "value_grid_config_refresh_$appWidgetId",
-                                                        ExistingWorkPolicy.REPLACE,
-                                                        workRequest
-                                                    )
-                                                android.util.Log.d(WIDGET_LOG_TAG, "Async: Worker enqueued via WorkManager.")
-                                            } catch (e: Exception) {
-                                                android.util.Log.e(WIDGET_LOG_TAG, "Async: FATAL ERROR", e)
-                                                ValueGridWidget().updateAll(appContext)
                                             }
+                                            android.util.Log.d(WIDGET_LOG_TAG, "DataStore updated for grid $appWidgetId")
                                         }
 
-                                        // 4. Finalize Activity ON MAIN THREAD
+                                        // Enqueue worker for immediate one-shot sync
+                                        val workRequest = OneTimeWorkRequestBuilder<DataSyncWorker>()
+                                            .setConstraints(DataSyncWorker.constraints())
+                                            .build()
+                                        WorkManager.getInstance(appContext)
+                                            .enqueueUniqueWork(
+                                                "value_grid_config_refresh_$appWidgetId",
+                                                ExistingWorkPolicy.REPLACE,
+                                                workRequest
+                                            )
+                                        android.util.Log.d(WIDGET_LOG_TAG, "Worker enqueued for $appWidgetId.")
+
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                            isConfigurationDone = true
                                             val resultIntent = Intent().apply {
                                                 putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                                             }
@@ -239,12 +219,5 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Only cancel async work if config was NOT completed — background sync must finish
-        if (!isConfigurationDone) {
-            asyncScope.cancel()
-        }
-        if (!isConfigurationDone && !isChangingConfigurations) {
-            setResult(RESULT_CANCELED)
-        }
     }
 }

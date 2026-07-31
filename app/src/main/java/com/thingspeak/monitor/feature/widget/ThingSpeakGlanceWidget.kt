@@ -5,9 +5,6 @@ import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.provideContent
 import androidx.glance.state.GlanceStateDefinition
-import dagger.hilt.android.EntryPointAccessors
-import com.thingspeak.monitor.core.di.WidgetEntryPoint
-import kotlinx.coroutines.flow.first
 
 class ThingSpeakGlanceWidget : GlanceAppWidget() {
     override val stateDefinition: GlanceStateDefinition<*> = WidgetPreferencesStateDefinition
@@ -36,25 +33,14 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
             context = context,
             appWidgetId = appWidgetId,
             widgetInstanceFactory = { ThingSpeakGlanceWidget() },
-            onGenerateChart = { channel, channelId ->
-                val entryPoint = EntryPointAccessors.fromApplication(
-                    context.applicationContext, WidgetEntryPoint::class.java
-                )
-                val repo = entryPoint.channelRepository()
-                val feedEntries: List<com.thingspeak.monitor.feature.channel.domain.model.FeedEntry> = try {
-                    repo.observeFeed(channelId).first()
-                } catch (e: Exception) {
-                    android.util.Log.w(WIDGET_LOG_TAG, "updateAppWidget: failed to load feed entries", e)
-                    emptyList()
-                }
-
-                if (feedEntries.isEmpty()) {
+            onGenerateChart = { channel, channelId, feeds ->
+                if (feeds.isEmpty()) {
                     null
                 } else try {
                     WidgetChartGenerator.generateAndSaveChart(
                         context = context,
                         channel = channel,
-                        entries = feedEntries.reversed(),
+                        entries = feeds.reversed(),
                         appWidgetId = appWidgetId
                     )
                 } catch (e: Exception) {
