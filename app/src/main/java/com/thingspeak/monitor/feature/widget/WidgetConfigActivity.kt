@@ -10,7 +10,6 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.flow.first
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
 import com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme
@@ -175,8 +174,17 @@ class WidgetConfigActivity : ComponentActivity() {
                         }
                     }
                 }
-                
-                ThingSpeakGlanceWidget().updateAll(appContext)
+
+                // Trigger refresh with 60s timeout protection via performWidgetRefreshAction
+                // Replaces updateAll + implicit refresh to prevent isRefreshing stuck at true
+                if (gId != null) {
+                    performWidgetRefreshAction(
+                        context = appContext,
+                        glanceId = gId,
+                        updateWidget = suspend { ThingSpeakGlanceWidget().update(appContext, gId) },
+                        uniqueWorkPrefix = "config_refresh"
+                    )
+                }
 
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     setResult(Activity.RESULT_OK, Intent().apply { putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId) })

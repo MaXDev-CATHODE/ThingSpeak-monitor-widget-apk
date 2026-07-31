@@ -302,5 +302,5 @@ private fun WidgetUIContent(data: WidgetData) {
     }
 }
 
-class GlanceRefreshAction : RefreshWidgetAction({ ThingSpeakGlanceWidget() }, "glance_refresh_sync")
+class GlanceRefreshAction : RefreshWidgetAction({ ThingSpeakGlanceWidget() }, "widget_refresh")
 class GlanceEditAction : EditWidgetAction(WidgetConfigActivity::class.java)

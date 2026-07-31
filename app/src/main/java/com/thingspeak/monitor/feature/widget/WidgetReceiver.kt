@@ -79,39 +79,37 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
         Log.i(WIDGET_LOG_TAG, "First widget added — periodic refresh enqueued")
     }
 
-    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        super.onDeleted(context, appWidgetIds)
-        android.util.Log.i(WIDGET_LOG_TAG, "WidgetReceiver onDeleted: ids=${appWidgetIds.joinToString()}")
-
-        WidgetUpdateHelper.cancelRefreshIfNoWidgetsLeft(context)
-
-        appWidgetIds.forEach { id ->
-            cancelRefreshTimeout(id)
-            cleanupScope.launch {
-                try {
-                    repository.removeBinding(id)
-                    WidgetChartCache.clear(context, id)
-                    Log.i(WIDGET_LOG_TAG, "WidgetReceiver: cleaned Room binding and chart cache for $id")
-                } catch (e: Exception) {
-                    Log.e(WIDGET_LOG_TAG, "WidgetReceiver: failed to clean Room binding and chart cache for $id", e)
-                }
-            }
-        }
-    }
-
-    override fun onDisabled(context: Context) {
-        super.onDisabled(context)
-        Log.i(WIDGET_LOG_TAG, "WidgetReceiver onDisabled: last widget removed, cleaning orphaned bindings")
+override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+    super.onDeleted(context, appWidgetIds)
+    android.util.Log.i(WIDGET_LOG_TAG, "WidgetReceiver onDeleted: ids=${appWidgetIds.joinToString()}")
+    WidgetUpdateHelper.cancelRefreshIfNoWidgetsLeft(context)
+    appWidgetIds.forEach { id ->
+        cancelRefreshTimeout(id)
         cleanupScope.launch {
             try {
-                repository.clearAllBindings()
-                WidgetChartCache.clearAll(context)
-                Log.i(WIDGET_LOG_TAG, "onDisabled: async cleanup completed")
+                repository.removeBinding(id)
+                WidgetChartCache.clear(context, id)
+                Log.i(WIDGET_LOG_TAG, "WidgetReceiver: cleaned Room binding and chart cache for $id")
             } catch (e: Exception) {
-                Log.e(WIDGET_LOG_TAG, "onDisabled: cleanup failed", e)
+                Log.e(WIDGET_LOG_TAG, "WidgetReceiver: failed clean", e)
             }
         }
     }
+}
+
+override fun onDisabled(context: Context) {
+    super.onDisabled(context)
+    Log.i(WIDGET_LOG_TAG, "WidgetReceiver onDisabled: cleaning orphaned bindings")
+    cleanupScope.launch {
+        try {
+            repository.clearAllBindings()
+            WidgetChartCache.clearAll(context)
+            Log.i(WIDGET_LOG_TAG, "onDisabled: async cleanup completed")
+        } catch (e: Exception) {
+            Log.e(WIDGET_LOG_TAG, "onDisabled: cleanup failed", e)
+        }
+    }
+}
 
     companion object {
         private val periodicScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

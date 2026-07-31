@@ -41,12 +41,10 @@ object WidgetUpdateHelper {
         data: WidgetData,
         boundChannelId: Long
     ): Boolean {
-        val healAttempted = prefs[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] ?: false
         val retryCount = prefs[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] ?: 0
         return data.channelName == WidgetPrefsKeys.LOADING_PLACEHOLDER &&
             boundChannelId != -1L &&
             !data.isRefreshing &&
-            !healAttempted &&
             retryCount < WidgetPrefsKeys.MAX_HEAL_RETRIES
     }
 
@@ -157,7 +155,8 @@ object WidgetUpdateHelper {
         context: Context,
         appWidgetId: Int,
         widgetInstanceFactory: () -> androidx.glance.appwidget.GlanceAppWidget,
-        onGenerateChart: suspend (SavedChannel, Long, List<FeedEntry>) -> String? = { _, _, _ -> null }
+        onGenerateChart: suspend (SavedChannel, Long, List<FeedEntry>) -> String? = { _, _, _ -> null },
+        isChartWidget: Boolean = true
     ) {
         val entryPoint = EntryPointAccessors.fromApplication(
             context.applicationContext, WidgetEntryPoint::class.java
@@ -214,7 +213,8 @@ object WidgetUpdateHelper {
                 .map { it.fieldNumber }.toSet(),
             maxSetFields = widgetAlerts
                 .filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_GREATER_THAN && it.isEnabled }
-                .map { it.fieldNumber }.toSet()
+                .map { it.fieldNumber }.toSet(),
+            skipChartPrefs = !isChartWidget
         )
 
         // Re-render widget
@@ -230,7 +230,8 @@ object WidgetUpdateHelper {
         violatedMinFields: Set<Int> = emptySet(),
         violatedMaxFields: Set<Int> = emptySet(),
         minSetFields: Set<Int> = emptySet(),
-        maxSetFields: Set<Int> = emptySet()
+        maxSetFields: Set<Int> = emptySet(),
+        skipChartPrefs: Boolean = false
     ) {
         android.util.Log.d("TS_DEBUG", "updateWidgetPreferences: START for channel ${channel.id}, glanceId=$glanceId")
         val cachedEntryStr = latestFeed?.let { f ->
@@ -271,7 +272,7 @@ object WidgetUpdateHelper {
                     this[WidgetPrefsKeys.KEY_CACHED_ENTRY] = cachedEntryStr
                 }
 
-                if (chartFile != null) {
+                if (!skipChartPrefs && chartFile != null) {
                     this[WidgetPrefsKeys.KEY_CHART_FILE] = chartFile
                     this.remove(WidgetPrefsKeys.KEY_CHART_BITMAP)
                 }
@@ -293,7 +294,9 @@ object WidgetUpdateHelper {
                     }
                 }
 
-                this[WidgetPrefsKeys.KEY_CHART_RESULTS] = channel.chartResults ?: 60
+                if (!skipChartPrefs) {
+                    this[WidgetPrefsKeys.KEY_CHART_RESULTS] = channel.chartResults ?: 60
+                }
 
                 this[WidgetPrefsKeys.KEY_VIOLATED_MIN_FIELDS] = violatedMinFields.map { it.toString() }.toSet()
                 this[WidgetPrefsKeys.KEY_VIOLATED_MAX_FIELDS] = violatedMaxFields.map { it.toString() }.toSet()
@@ -355,7 +358,8 @@ object WidgetUpdateHelper {
                         violatedMinFields = violatedMinFields,
                         violatedMaxFields = violatedMaxFields,
                         minSetFields = minSetFields,
-                        maxSetFields = maxSetFields
+                        maxSetFields = maxSetFields,
+                        skipChartPrefs = widgetClass != ThingSpeakGlanceWidget::class.java
                     )
                     when (widgetClass) {
                         ThingSpeakGlanceWidget::class.java -> ThingSpeakGlanceWidget().update(context, glanceId)

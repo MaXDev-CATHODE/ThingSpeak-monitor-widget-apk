@@ -349,5 +349,5 @@ fun ValueTile(
     }
 }
 
-class GridRefreshAction : RefreshWidgetAction({ ValueGridWidget() }, "widget_grid_refresh_sync")
+class GridRefreshAction : RefreshWidgetAction({ ValueGridWidget() }, "widget_refresh")
 class GridEditAction : EditWidgetAction(ValueGridWidgetConfigActivity::class.java)

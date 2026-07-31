@@ -163,15 +163,11 @@ class DataSyncWorker @AssistedInject constructor(
         const val WORK_NAME = "DataSyncWorker"
 
         fun runOnce(context: Context) {
-            if (workingLock.get()) {
-                android.util.Log.d(
-                    com.thingspeak.monitor.feature.widget.WIDGET_LOG_TAG,
-                    "runOnce: sync already in progress, skipped"
-                )
-                return
-            }
-            val request = OneTimeWorkRequestBuilder<DataSyncWorker>().setConstraints(constraints()).build()
-            WorkManager.getInstance(context).enqueue(request)
+            val request = OneTimeWorkRequestBuilder<DataSyncWorker>()
+                .setConstraints(constraints())
+                .build()
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork("${WORK_NAME}_runOnce", ExistingWorkPolicy.REPLACE, request)
         }
     }
 }

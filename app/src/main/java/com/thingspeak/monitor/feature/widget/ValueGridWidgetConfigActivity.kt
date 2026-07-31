@@ -1,6 +1,5 @@
 package com.thingspeak.monitor.feature.widget
 
-import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
@@ -18,16 +17,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
 import com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme
-import com.thingspeak.monitor.core.worker.DataSyncWorker
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.EntryPointAccessors
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -179,22 +173,21 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                     this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
                                                     this[WidgetPrefsKeys.KEY_BG_COLOR_MODE] = colorMode ?: WidgetPrefsKeys.COLOR_MODE_CUSTOM
                                                     this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
+                                                    this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
                                                 }
                                             }
                                             android.util.Log.d(WIDGET_LOG_TAG, "DataStore updated for grid $appWidgetId")
-                                        }
 
-                                        // Enqueue worker for immediate one-shot sync
-                                        val workRequest = OneTimeWorkRequestBuilder<DataSyncWorker>()
-                                            .setConstraints(DataSyncWorker.constraints())
-                                            .build()
-                                        WorkManager.getInstance(appContext)
-                                            .enqueueUniqueWork(
-                                                "value_grid_config_refresh_$appWidgetId",
-                                                ExistingWorkPolicy.REPLACE,
-                                                workRequest
+                                            // Trigger refresh with 60s timeout protection via performWidgetRefreshAction
+                                            // Replaces raw WorkManager enqueue to prevent isRefreshing stuck at true
+                                            performWidgetRefreshAction(
+                                                context = appContext,
+                                                glanceId = gId,
+                                                updateWidget = suspend { ValueGridWidget().update(appContext, gId) },
+                                                uniqueWorkPrefix = "config_refresh"
                                             )
-                                        android.util.Log.d(WIDGET_LOG_TAG, "Worker enqueued for $appWidgetId.")
+                                            android.util.Log.d(WIDGET_LOG_TAG, "Refresh action enqueued for $appWidgetId.")
+                                        }
 
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                             val resultIntent = Intent().apply {

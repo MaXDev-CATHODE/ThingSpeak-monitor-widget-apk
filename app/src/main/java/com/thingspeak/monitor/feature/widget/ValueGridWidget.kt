@@ -41,7 +41,8 @@ class ValueGridWidget : GlanceAppWidget() {
         WidgetUpdateHelper.performUpdate(
             context = context,
             appWidgetId = appWidgetId,
-            widgetInstanceFactory = { ValueGridWidget() }
+            widgetInstanceFactory = { ValueGridWidget() },
+            isChartWidget = false
         )
     }
 }
@@ -91,37 +92,35 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
         }
     }
 
-    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        super.onDeleted(context, appWidgetIds)
-        android.util.Log.i(WIDGET_LOG_TAG, "onDeleted: ids=${appWidgetIds.joinToString()}")
-
-        WidgetUpdateHelper.cancelRefreshIfNoWidgetsLeft(context)
-
-        appWidgetIds.forEach { id ->
-            cancelRefreshTimeout(id)
-            updateScope.launch {
-                try {
-                    repository.removeBinding(id)
-                    WidgetChartCache.clear(context, id)
-                    android.util.Log.i(WIDGET_LOG_TAG, "cleaned Room binding and chart cache for $id")
-                } catch (e: Exception) {
-                    android.util.Log.e(WIDGET_LOG_TAG, "failed to clean Room binding for $id", e)
-                }
-            }
-        }
-    }
-
-    override fun onDisabled(context: Context) {
-        super.onDisabled(context)
-        android.util.Log.i(WIDGET_LOG_TAG, "ValueGridWidgetReceiver onDisabled: last grid removed, cleaning orphaned bindings")
+override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+    super.onDeleted(context, appWidgetIds)
+    android.util.Log.i(WIDGET_LOG_TAG, "onDeleted: ids=${appWidgetIds.joinToString()}")
+    WidgetUpdateHelper.cancelRefreshIfNoWidgetsLeft(context)
+    appWidgetIds.forEach { id ->
+        cancelRefreshTimeout(id)
         updateScope.launch {
             try {
-                repository.clearAllBindings()
-                WidgetChartCache.clearAll(context)
-                android.util.Log.i(WIDGET_LOG_TAG, "onDisabled: grid async cleanup completed")
+                repository.removeBinding(id)
+                WidgetChartCache.clear(context, id)
+                android.util.Log.i(WIDGET_LOG_TAG, "cleaned Room binding and chart cache for $id")
             } catch (e: Exception) {
-                android.util.Log.e(WIDGET_LOG_TAG, "onDisabled: grid cleanup failed", e)
+                android.util.Log.e(WIDGET_LOG_TAG, "failed to clean Room binding for $id", e)
             }
         }
     }
+}
+
+override fun onDisabled(context: Context) {
+    super.onDisabled(context)
+    android.util.Log.i(WIDGET_LOG_TAG, "ValueGridWidgetReceiver onDisabled: cleaning orphaned bindings")
+    updateScope.launch {
+        try {
+            repository.clearAllBindings()
+            WidgetChartCache.clearAll(context)
+            android.util.Log.i(WIDGET_LOG_TAG, "onDisabled: grid async cleanup completed")
+        } catch (e: Exception) {
+            android.util.Log.e(WIDGET_LOG_TAG, "onDisabled: grid cleanup failed", e)
+        }
+    }
+}
 }
