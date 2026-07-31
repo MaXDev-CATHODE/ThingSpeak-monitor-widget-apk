@@ -18,6 +18,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import com.thingspeak.monitor.core.datastore.SavedChannel
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 @HiltWorker
 class DataSyncWorker @AssistedInject constructor(
@@ -32,8 +33,12 @@ class DataSyncWorker @AssistedInject constructor(
     private val TAG = com.thingspeak.monitor.feature.widget.WIDGET_LOG_TAG
 
     override suspend fun doWork(): Result {
-        android.util.Log.i(TAG, "DataSyncWorker START: periodic sync triggered")
-        return try {
+        if (!workingLock.compareAndSet(false, true)) {
+            android.util.Log.w(TAG, "DataSyncWorker: sync already in progress, skipping duplicate")
+            return Result.success()
+        }
+        try {
+            android.util.Log.i(TAG, "DataSyncWorker START: periodic sync triggered")
             val channels = channelPrefs.observe().first()
             if (channels.isEmpty()) {
                 android.util.Log.v(TAG, "DataSyncWorker: No channels to sync, skipping.")
@@ -49,10 +54,12 @@ class DataSyncWorker @AssistedInject constructor(
 
             updateAllWidgets()
             android.util.Log.i(TAG, "DataSyncWorker SUCCESS: All channels processed.")
-            Result.success()
+            return Result.success()
         } catch (e: Exception) {
             android.util.Log.e(TAG, "DataSyncWorker CRITICALLY FAILED", e)
-            Result.retry()
+            return Result.retry()
+        } finally {
+            workingLock.set(false)
         }
     }
 
@@ -62,32 +69,13 @@ class DataSyncWorker @AssistedInject constructor(
 
         try {
             val result = syncChannelUseCase(channel.toDomain())
-            
+
             if (result.error != null) {
                 android.util.Log.w(TAG, "syncChannel RESULT: Error for ${channel.id}: ${result.error.message}")
             }
 
-            // 1.  Generate chart bitmap (only if we have entries)
             val entries = repository.observeFeed(channel.id).first()
-            val channelChartBase64: String? = if (entries.isNotEmpty()) {
-                try {
-                    val defaultFieldIndices = channel.preferredChartFields?.ifEmpty { null }
-                        ?: channel.widgetVisibleFields?.ifEmpty { null }
-                        ?: setOf(1)
-                    com.thingspeak.monitor.feature.widget.WidgetChartGenerator.generateChartBase64(
-                        context = applicationContext,
-                        entries = entries.reversed(),
-                        fieldIndices = defaultFieldIndices,
-                        isNormalized = channel.isNormalized,
-                        fieldColorsOverride = channel.fieldColors
-                    )
-                } catch (e: Exception) {
-                    android.util.Log.w(TAG, "syncChannel: Chart generation FAILED for channel ${channel.id}", e)
-                    null
-                }
-            } else null
 
-            // 2.  Update bound widgets
             com.thingspeak.monitor.feature.widget.WidgetUpdateHelper.pushToBoundWidgets(
                 context = applicationContext,
                 channel = result.channel.toSavedChannel(),
@@ -104,7 +92,7 @@ class DataSyncWorker @AssistedInject constructor(
                 maxSetFields = result.channelRules.filter {
                     it.condition == com.thingspeak.monitor.feature.widget.WidgetPrefsKeys.ALERT_CONDITION_GREATER_THAN && it.isEnabled
                 }.map { it.fieldNumber }.toSet(),
-                chartBase64 = channelChartBase64
+                feedEntries = entries
             )
             android.util.Log.i(TAG, "syncChannel COMPLETED for ${channel.id}. Took ${System.currentTimeMillis() - startTime}ms")
         } catch (e: Exception) {
@@ -115,13 +103,26 @@ class DataSyncWorker @AssistedInject constructor(
     private suspend fun updateAllWidgets() {
         try {
             val manager = GlanceAppWidgetManager(applicationContext)
-            manager.getGlanceIds(ThingSpeakGlanceWidget::class.java).forEach { id ->
-                clearRefreshingState(id)
-                ThingSpeakGlanceWidget().update(applicationContext, id)
-            }
-            manager.getGlanceIds(com.thingspeak.monitor.feature.widget.ValueGridWidget::class.java).forEach { id ->
-                clearRefreshingState(id)
-                com.thingspeak.monitor.feature.widget.ValueGridWidget().update(applicationContext, id)
+            val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                applicationContext, com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
+            )
+            val bindingRepo = entryPoint.widgetBindingRepository()
+
+            for (widgetClass in listOf(
+                ThingSpeakGlanceWidget::class.java,
+                com.thingspeak.monitor.feature.widget.ValueGridWidget::class.java
+            )) {
+                manager.getGlanceIds(widgetClass).forEach { id ->
+                    val appWidgetId = manager.getAppWidgetId(id)
+                    if (bindingRepo.getBindingSync(appWidgetId) != -1L) {
+                        clearRefreshingState(id)
+                        when (widgetClass) {
+                            ThingSpeakGlanceWidget::class.java -> ThingSpeakGlanceWidget().update(applicationContext, id)
+                            com.thingspeak.monitor.feature.widget.ValueGridWidget::class.java ->
+                                com.thingspeak.monitor.feature.widget.ValueGridWidget().update(applicationContext, id)
+                        }
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "UI Update failed", e)
@@ -129,9 +130,13 @@ class DataSyncWorker @AssistedInject constructor(
     }
 
     private suspend fun clearRefreshingState(id: androidx.glance.GlanceId) {
-        val appWidgetId = GlanceAppWidgetManager(applicationContext).getAppWidgetId(id)
-        com.thingspeak.monitor.feature.widget.onRefreshCompleted(appWidgetId)
-        androidx.glance.appwidget.state.updateAppWidgetState(applicationContext, com.thingspeak.monitor.feature.widget.WidgetPreferencesStateDefinition, id) { prefs ->
+        val widgetId = GlanceAppWidgetManager(applicationContext).getAppWidgetId(id)
+        com.thingspeak.monitor.feature.widget.onRefreshCompleted(widgetId)
+        androidx.glance.appwidget.state.updateAppWidgetState(
+            applicationContext,
+            com.thingspeak.monitor.feature.widget.WidgetPreferencesStateDefinition,
+            id
+        ) { prefs ->
             prefs.toMutablePreferences().apply {
                 this[com.thingspeak.monitor.feature.widget.WidgetPrefsKeys.KEY_IS_REFRESHING] = false
             }
@@ -139,12 +144,10 @@ class DataSyncWorker @AssistedInject constructor(
     }
 
     companion object {
+        private val workingLock = AtomicBoolean(false)
+
         fun constraints(): Constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-        
-        /**
-         * Schedule periodic data sync with KEEP policy to avoid resetting the timer.
-         * Use this for routine scheduling (widget lifecycle, boot receiver).
-         */
+
         fun schedule(context: Context, intervalMinutes: Long) {
             val request = PeriodicWorkRequestBuilder<DataSyncWorker>(intervalMinutes, TimeUnit.MINUTES)
                 .setConstraints(constraints())
@@ -153,11 +156,7 @@ class DataSyncWorker @AssistedInject constructor(
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
         }
-        
-        /**
-         * Schedules periodic data sync with UPDATE policy to apply new interval immediately.
-         * Use this when user changes sync interval in settings or after device boot.
-         */
+
         fun scheduleWithUpdate(context: Context, intervalMinutes: Long) {
             val request = PeriodicWorkRequestBuilder<DataSyncWorker>(intervalMinutes, TimeUnit.MINUTES)
                 .setConstraints(constraints())
@@ -166,16 +165,24 @@ class DataSyncWorker @AssistedInject constructor(
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
-        
+
         const val WORK_NAME = "DataSyncWorker"
+
         fun runOnce(context: Context) {
+            if (workingLock.get()) {
+                android.util.Log.d(
+                    com.thingspeak.monitor.feature.widget.WIDGET_LOG_TAG,
+                    "runOnce: sync already in progress, skipped"
+                )
+                return
+            }
             val request = OneTimeWorkRequestBuilder<DataSyncWorker>().setConstraints(constraints()).build()
             WorkManager.getInstance(context).enqueue(request)
         }
     }
 }
 
-private fun SavedChannel.toDomain(): com.thingspeak.monitor.feature.channel.domain.model.Channel = 
+private fun SavedChannel.toDomain(): com.thingspeak.monitor.feature.channel.domain.model.Channel =
     com.thingspeak.monitor.feature.channel.domain.model.Channel(
         id = id,
         name = name,

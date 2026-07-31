@@ -81,7 +81,7 @@ object WidgetChartCache {
     /**
      * Cleans all cached chart files.
      */
-    private fun clearAll(context: Context) {
+    fun clearAll(context: Context) {
         try {
             cacheDir(context).listFiles()?.forEach { it.delete() }
         } catch (e: Exception) {

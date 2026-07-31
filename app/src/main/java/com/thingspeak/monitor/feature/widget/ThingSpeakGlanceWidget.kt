@@ -48,23 +48,19 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
                     emptyList()
                 }
 
-                var chartBase64: String? = null
-                if (feedEntries.isNotEmpty()) {
-                    try {
-                        chartBase64 = WidgetChartGenerator.generateChartBase64(
-                            context = context,
-                            entries = feedEntries.reversed(),
-                            fieldIndices = channel.preferredChartFields?.ifEmpty { null }
-                                ?: channel.widgetVisibleFields?.ifEmpty { null }
-                                ?: setOf(1),
-                            isNormalized = true,
-                            fieldColorsOverride = channel.fieldColors
-                        )
-                    } catch (e: Exception) {
-                        android.util.Log.w(WIDGET_LOG_TAG, "updateAppWidget: Chart generation failed", e)
-                    }
+                if (feedEntries.isEmpty()) {
+                    null
+                } else try {
+                    WidgetChartGenerator.generateAndSaveChart(
+                        context = context,
+                        channel = channel,
+                        entries = feedEntries.reversed(),
+                        appWidgetId = appWidgetId
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.w(WIDGET_LOG_TAG, "updateAppWidget: Chart generation failed", e)
+                    null
                 }
-                chartBase64
             }
         )
     }

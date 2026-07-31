@@ -109,31 +109,13 @@ class DataSyncService : Service() {
     }
 
     private suspend fun updateWidgetsForChannel(result: SyncChannelUseCase.Result) {
-        val channel = result.channel
-
-        val chartBase64: String? = run {
-            if (channel.preferredChartFields?.isNotEmpty() != true &&
-                channel.widgetVisibleFields?.isNotEmpty() != true) return@run null
-            val entries = repository.observeFeed(channel.id).first()
-            if (entries.isEmpty()) return@run null
-            try {
-                WidgetChartGenerator.generateChartBase64(
-                    context = this@DataSyncService,
-                    entries = entries.reversed(),
-                    fieldIndices = channel.preferredChartFields?.ifEmpty { null }
-                            ?: channel.widgetVisibleFields?.ifEmpty { null }
-                            ?: setOf(1),
-                    isNormalized = channel.isNormalized
-                )
-            } catch (e: Exception) {
-                Log.w(TAG, "updateWidgetsForChannel: Chart generation failed for ${channel.id}", e)
-                null
-            }
-        }
+        val domainChannel = result.channel
+        val savedChannel = domainChannel.toSavedChannel()
+        val entries = repository.observeFeed(domainChannel.id).first()
 
         WidgetUpdateHelper.pushToBoundWidgets(
             context = this,
-            channel = channel.toSavedChannel(),
+            channel = savedChannel,
             latestFeed = result.latestEntry,
             violatedMinFields = result.allViolations.filter {
                 it.condition == WidgetPrefsKeys.ALERT_CONDITION_LESS_THAN
@@ -147,7 +129,7 @@ class DataSyncService : Service() {
             maxSetFields = result.channelRules.filter {
                 it.condition == WidgetPrefsKeys.ALERT_CONDITION_GREATER_THAN && it.isEnabled
             }.map { it.fieldNumber }.toSet(),
-            chartBase64 = chartBase64
+            feedEntries = entries
         )
     }
 

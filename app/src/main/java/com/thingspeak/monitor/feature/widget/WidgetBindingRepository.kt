@@ -47,6 +47,10 @@ class WidgetBindingRepository @Inject constructor(
         widgetBindingDao.deleteBinding(appWidgetId)
     }
 
+    suspend fun clearAllBindings() {
+        widgetBindingDao.clearAllBindings()
+    }
+
     /**
      * Get binding synchronously for actions.
      */

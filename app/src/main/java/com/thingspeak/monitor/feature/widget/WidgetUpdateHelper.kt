@@ -190,7 +190,7 @@ object WidgetUpdateHelper {
             ?: emptyList<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>()
 
         // Chart generation (only for chart widget; grid widgets get null)
-        val chartBase64 = onGenerateChart(channel, channelId)
+        val chartFile = onGenerateChart(channel, channelId)
 
         // Resolve chartResults from existing prefs (preserve user setting)
         val prefs = getAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId)
@@ -202,7 +202,7 @@ object WidgetUpdateHelper {
             glanceId = glanceId,
             channel = channel.copy(chartResults = cachedChartResults),
             latestFeed = latestFeed,
-            chartBitmapBase64 = chartBase64,
+            chartFile = chartFile,
             violatedMinFields = violations
                 .filter { it.condition == WidgetPrefsKeys.ALERT_CONDITION_LESS_THAN }
                 .map { it.fieldNumber }.toSet(),
@@ -226,7 +226,7 @@ object WidgetUpdateHelper {
         glanceId: GlanceId,
         channel: SavedChannel,
         latestFeed: FeedEntry?,
-        chartBitmapBase64: String? = null,
+        chartFile: String? = null,
         violatedMinFields: Set<Int> = emptySet(),
         violatedMaxFields: Set<Int> = emptySet(),
         minSetFields: Set<Int> = emptySet(),
@@ -271,21 +271,9 @@ object WidgetUpdateHelper {
                     this[WidgetPrefsKeys.KEY_CACHED_ENTRY] = cachedEntryStr
                 }
 
-                if (chartBitmapBase64 != null) {
-                    val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
-                    val decodedBitmap = try {
-                        val bytes = android.util.Base64.decode(chartBitmapBase64, android.util.Base64.DEFAULT)
-                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    } catch (e: Exception) { null }
-                    if (decodedBitmap != null) {
-                        val path = WidgetChartCache.save(context, appWidgetId, decodedBitmap)
-                        if (path != null) {
-                            this[WidgetPrefsKeys.KEY_CHART_FILE] = path
-                            this.remove(WidgetPrefsKeys.KEY_CHART_BITMAP)
-                        } else {
-                            android.util.Log.w("TS_DEBUG", "updateWidgetPreferences: file cache save failed — chart skipped")
-                        }
-                    }
+                if (chartFile != null) {
+                    this[WidgetPrefsKeys.KEY_CHART_FILE] = chartFile
+                    this.remove(WidgetPrefsKeys.KEY_CHART_BITMAP)
                 }
 
                 // PROTECT visual settings — only overwrite if user hasn't customized them via config screen
@@ -312,7 +300,7 @@ object WidgetUpdateHelper {
                 this[WidgetPrefsKeys.KEY_MIN_SET_FIELDS] = minSetFields.map { it.toString() }.toSet()
                 this[WidgetPrefsKeys.KEY_MAX_SET_FIELDS] = maxSetFields.map { it.toString() }.toSet()
 
-                this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = true
+                this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = cachedEntryStr != null
                 this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
             }
         }
@@ -322,6 +310,9 @@ object WidgetUpdateHelper {
     /**
      * Pushes widget state to all bound widgets for a given channel.
      * Replaces duplicated loop logic in [DataSyncWorker] and [DataSyncService].
+     *
+     * @param feedEntries When non-empty, generates per-widget chart using the actual
+     *                    appWidgetId as the cache key (avoids channel-vs-widget key collision).
      */
     suspend fun pushToBoundWidgets(
         context: Context,
@@ -331,7 +322,7 @@ object WidgetUpdateHelper {
         violatedMaxFields: Set<Int>,
         minSetFields: Set<Int>,
         maxSetFields: Set<Int>,
-        chartBase64: String?
+        feedEntries: List<FeedEntry>? = null
     ) {
         val manager = GlanceAppWidgetManager(context)
         val entryPoint = EntryPointAccessors.fromApplication(
@@ -346,12 +337,21 @@ object WidgetUpdateHelper {
             manager.getGlanceIds(widgetClass).forEach { glanceId ->
                 val appWidgetId = manager.getAppWidgetId(glanceId)
                 if (bindingRepo.getBindingSync(appWidgetId) == channel.id) {
+                    val chartFile = if (widgetClass == ThingSpeakGlanceWidget::class.java && feedEntries != null && feedEntries.isNotEmpty()) {
+                        WidgetChartGenerator.generateAndSaveChart(
+                            context = context,
+                            channel = channel,
+                            entries = feedEntries.reversed(),
+                            appWidgetId = appWidgetId
+                        )
+                    } else null
+
                     updateWidgetPreferences(
                         context = context,
                         glanceId = glanceId,
                         channel = channel,
                         latestFeed = latestFeed,
-                        chartBitmapBase64 = if (widgetClass == ThingSpeakGlanceWidget::class.java) chartBase64 else null,
+                        chartFile = chartFile,
                         violatedMinFields = violatedMinFields,
                         violatedMaxFields = violatedMaxFields,
                         minSetFields = minSetFields,
