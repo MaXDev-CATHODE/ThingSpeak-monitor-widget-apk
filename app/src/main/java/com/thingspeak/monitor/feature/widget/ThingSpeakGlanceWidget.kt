@@ -14,29 +14,16 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
     override val sizeMode = androidx.glance.appwidget.SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val entryPoint = EntryPointAccessors.fromApplication(context.applicationContext, WidgetEntryPoint::class.java)
-        val bindingRepo = entryPoint.widgetBindingRepository()
-        val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(id)
-        val boundChannelId = bindingRepo.getBindingSync(appWidgetId)
-
-        val realSyncIntervalMinutes: Long = try {
-            entryPoint.appPreferences().observeSyncInterval().first()
-        } catch (e: Exception) {
-            android.util.Log.w("TS_DEBUG", "Failed to read sync interval, using default", e)
-            DEFAULT_SYNC_INTERVAL_MINUTES
-        }
+        val gCtx = WidgetUpdateHelper.resolveGlanceContext(context, id)
 
         provideContent {
             val prefs = androidx.glance.currentState<androidx.datastore.preferences.core.Preferences>()
-            val data = loadWidgetDataFromPreferences(prefs, boundChannelId, realSyncIntervalMinutes)
+            val data = loadWidgetDataFromPreferences(prefs, gCtx.boundChannelId, gCtx.syncIntervalMinutes)
 
-            // Self-Healing: trigger repair if prefs are empty/stale (one-shot guarded)
-            val healAttempted = prefs[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] ?: false
-            if (data.channelName == WidgetPrefsKeys.LOADING_PLACEHOLDER &&
-                boundChannelId != -1L && !data.isRefreshing && !healAttempted
-            ) {
-                androidx.compose.runtime.LaunchedEffect(boundChannelId) {
-                    updateAppWidget(context, appWidgetId)
+            if (WidgetUpdateHelper.shouldTriggerSelfHeal(prefs, data, gCtx.boundChannelId)) {
+                androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
+                    WidgetUpdateHelper.bumpHealRetry(context, id)
+                    updateAppWidget(context, gCtx.appWidgetId)
                 }
             }
 
@@ -57,14 +44,15 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
                 val feedEntries: List<com.thingspeak.monitor.feature.channel.domain.model.FeedEntry> = try {
                     repo.observeFeed(channelId).first()
                 } catch (e: Exception) {
-                    android.util.Log.w("TS_DEBUG", "updateAppWidget: failed to load feed entries", e)
+                    android.util.Log.w(WIDGET_LOG_TAG, "updateAppWidget: failed to load feed entries", e)
                     emptyList()
                 }
 
                 var chartBase64: String? = null
                 if (feedEntries.isNotEmpty()) {
                     try {
-                        val chartBitmap = WidgetChartGenerator.generateSimpleChart(
+                        chartBase64 = WidgetChartGenerator.generateChartBase64(
+                            context = context,
                             entries = feedEntries.reversed(),
                             fieldIndices = channel.preferredChartFields?.ifEmpty { null }
                                 ?: channel.widgetVisibleFields?.ifEmpty { null }
@@ -72,9 +60,8 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
                             isNormalized = true,
                             fieldColorsOverride = channel.fieldColors
                         )
-                        chartBase64 = bitmapToBase64(chartBitmap)
                     } catch (e: Exception) {
-                        android.util.Log.w("TS_DEBUG", "updateAppWidget: Chart generation failed", e)
+                        android.util.Log.w(WIDGET_LOG_TAG, "updateAppWidget: Chart generation failed", e)
                     }
                 }
                 chartBase64

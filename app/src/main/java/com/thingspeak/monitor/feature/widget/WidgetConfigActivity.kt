@@ -6,15 +6,16 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.datastore.preferences.core.Preferences
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.flow.first
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
-import com.thingspeak.monitor.core.datastore.SavedChannel
 import com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -38,6 +39,8 @@ class WidgetConfigActivity : ComponentActivity() {
     lateinit var repository: com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 
     private val scope = MainScope()
+    private val saveGuard = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val lastRefreshTimestamp = java.util.concurrent.atomic.AtomicLong(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,7 +50,7 @@ class WidgetConfigActivity : ComponentActivity() {
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return }
 
         scope.launch {
-            val glanceId = findWidgetGlanceId(this, appWidgetId, widgetClasses = listOf(ThingSpeakGlanceWidget::class.java))
+            val glanceId = findWidgetGlanceId(this@WidgetConfigActivity, appWidgetId, widgetClasses = listOf(ThingSpeakGlanceWidget::class.java))
             val prefs = if (glanceId != null) getAppWidgetState<Preferences>(this@WidgetConfigActivity, WidgetPreferencesStateDefinition, glanceId) else null
             
             val savedChannelId = prefs?.get(WidgetPrefsKeys.KEY_CHANNEL_ID)
@@ -87,14 +90,20 @@ class WidgetConfigActivity : ComponentActivity() {
                         isSaving = isSaving,
                         availableChannels = allChannels,
                         onRefreshRequest = { chanId, key ->
+                            val now = System.currentTimeMillis()
+                            if (now - lastRefreshTimestamp.getAndSet(now) < 3000L) {
+                                android.util.Log.d(WIDGET_LOG_TAG, "WidgetConfig: refresh debounced for $chanId")
+                                return@WidgetConfigScreen
+                            }
                             scope.launch { 
                                 val ch = allChannels.find { it.id == chanId }
                                 try { repository.refreshFeed(chanId, key, chartTimespan = ch?.chartTimespan) } catch (e: Exception) { 
-                                    android.util.Log.e("TS_DEBUG", "WidgetConfig: refreshFeed failed for $chanId", e) 
+                                    android.util.Log.e(WIDGET_LOG_TAG, "WidgetConfig: refreshFeed failed for $chanId", e) 
                                 } 
                             }
                         },
                         onSave = { chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResults, alertRules ->
+                            if (!saveGuard.compareAndSet(false, true)) return@WidgetConfigScreen
                             isSaving = true
                             onChannelSaved(appWidgetId, chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResults, alertRules)
                         },
@@ -123,34 +132,19 @@ class WidgetConfigActivity : ComponentActivity() {
     ) {
         scope.launch {
             try {
-                // Unified Alerts: rules are global per channel (appWidgetId = null)
-                repository.deleteGlobalAlertRules(channelId)
-                alertRules.forEach { rule ->
-                    repository.saveAlertRule(rule.copy(appWidgetId = null))
-                }
-                android.util.Log.d("TS_DEBUG", "Unified Alert rules saved for channel $channelId")
-                // 1. Update Core Channel Info (API Key, Name Only)
-                val existingChannel = channelPreferences.observe().first().find { it.id == channelId }
-                val updatedChannel = (existingChannel ?: SavedChannel(id = channelId, name = channelName)).copy(
-                    id = channelId,
-                    name = channelName,
-                    apiKey = apiKey,
-                    lastSyncStatus = WidgetPrefsKeys.STATUS_NONE,
-                    lastSyncTime = System.currentTimeMillis()
+                val entryPoint = EntryPointAccessors.fromApplication(
+                    applicationContext, com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
                 )
-                channelPreferences.save(updatedChannel)
-                android.util.Log.d("TS_DEBUG", "Core Channel info saved (Visuals skipped for isolation)")
-
-                widgetBindingRepository.saveBinding(appWidgetId, channelId)
-
-                // Sync with Room DB for app UI consistency (Core Info Only)
-                repository.observeChannel(channelId).first()?.let { roomChannel ->
-                    repository.updateChannel(roomChannel.copy(
-                        name = channelName,
-                        apiKey = apiKey
-                        // Visuals skipped to avoid interference with Main App (Agent 2.1 Fix)
-                    ))
-                }
+                WidgetUpdateHelper.saveWidgetCoreConfig(
+                    entryPoint = entryPoint,
+                    channelPreferences = channelPreferences,
+                    widgetBindingRepository = widgetBindingRepository,
+                    appWidgetId = appWidgetId,
+                    channelId = channelId,
+                    apiKey = apiKey,
+                    channelName = channelName,
+                    alertRules = alertRules
+                )
 
                 val appContext = applicationContext
                 val gId = findWidgetGlanceId(appContext, appWidgetId, widgetClasses = listOf(ThingSpeakGlanceWidget::class.java))
@@ -169,9 +163,11 @@ class WidgetConfigActivity : ComponentActivity() {
                             this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = widgetVisibleFields.map { it.toString() }.toSet()
                             this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
                             this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
+                            this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
                             // Clear stale chart bitmap so widget shows "Loading Chart..." until
                             // DataSyncWorker generates a fresh one for the newly selected channel
                             this.remove(WidgetPrefsKeys.KEY_CHART_BITMAP)
+                            this.remove(WidgetPrefsKeys.KEY_CHART_FILE)
                         }
                     }
                 }

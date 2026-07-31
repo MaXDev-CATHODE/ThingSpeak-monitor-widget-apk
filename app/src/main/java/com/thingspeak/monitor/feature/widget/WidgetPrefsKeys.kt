@@ -28,6 +28,7 @@ object WidgetPrefsKeys {
     val KEY_IS_REFRESHING: Preferences.Key<Boolean> = booleanPreferencesKey("is_refreshing")
     val KEY_CACHED_ENTRY: Preferences.Key<String> = stringPreferencesKey("cached_entry")
     val KEY_CHART_BITMAP: Preferences.Key<String> = stringPreferencesKey("chart_bitmap")
+    val KEY_CHART_FILE: Preferences.Key<String> = stringPreferencesKey("chart_file")
     val KEY_LAST_SYNC_STATUS: Preferences.Key<String> = stringPreferencesKey("last_sync_status")
     val KEY_CHANNEL_TIMEZONE: Preferences.Key<String> = stringPreferencesKey("channel_timezone")
     val KEY_VISIBLE_FIELDS: Preferences.Key<Set<String>> = stringSetPreferencesKey("visible_fields")
@@ -35,6 +36,7 @@ object WidgetPrefsKeys {
     val KEY_VIOLATED_MAX_FIELDS: Preferences.Key<Set<String>> = stringSetPreferencesKey("violated_max_fields")
     val KEY_MIN_SET_FIELDS: Preferences.Key<Set<String>> = stringSetPreferencesKey("min_set_fields")
     val KEY_MAX_SET_FIELDS: Preferences.Key<Set<String>> = stringSetPreferencesKey("max_set_fields")
+    val KEY_BG_COLOR_MODE: Preferences.Key<String> = stringPreferencesKey("bg_color_mode")
 
     // ---- Magic Strings ----
     const val LOADING_PLACEHOLDER = "Loading..."
@@ -42,7 +44,27 @@ object WidgetPrefsKeys {
     const val STATUS_NONE = "NONE"
     const val ALERT_CONDITION_LESS_THAN = "LESS_THAN"
     const val ALERT_CONDITION_GREATER_THAN = "GREATER_THAN"
+    const val COLOR_MODE_CUSTOM = "custom"
+    const val COLOR_MODE_SYSTEM = "system"
 
     val KEY_WIDGET_VISUALS_CUSTOMIZED: Preferences.Key<Boolean> = booleanPreferencesKey("widget_visuals_customized")
     val KEY_HEAL_ATTEMPTED: Preferences.Key<Boolean> = booleanPreferencesKey("_heal_attempted")
+    val KEY_HEAL_RETRY_COUNT: Preferences.Key<Int> = intPreferencesKey("_heal_retry_count")
+    const val MAX_HEAL_RETRIES = 3
+
+    // ---- Widget layout constants (dp) ----
+    const val HEIGHT_TINY_THRESHOLD = 100
+    const val HEIGHT_COMPACT_THRESHOLD = 140
+    const val WIDTH_TINY_THRESHOLD = 150
+    const val WIDTH_COMPACT_THRESHOLD = 200
+    const val HEIGHT_SMALL_GRID = 120
+    const val TINY_MAX_FIELDS = 2
+    const val COMPACT_MAX_FIELDS = 4
+
+    // ---- Log tags ----
+    const val LOG_TAG_WIDGET = "TS_WIDGET"
+    const val LOG_TAG_RECEIVER = "TS_RECEIVER"
+    const val LOG_TAG_WORKER = "TS_WORKER"
+    const val LOG_TAG_CONFIG = "TS_CONFIG"
+    const val LOG_TAG_CHART = "TS_CHART"
 }

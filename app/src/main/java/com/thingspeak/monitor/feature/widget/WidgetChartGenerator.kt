@@ -1,6 +1,7 @@
 package com.thingspeak.monitor.feature.widget
 
 import android.graphics.*
+import android.content.Context
 import com.thingspeak.monitor.feature.channel.domain.model.FeedEntry
 
 /**
@@ -63,12 +64,12 @@ object WidgetChartGenerator {
         return Pair(globalMin - padding, globalMax + padding)
     }
 
-    fun generateSimpleChart(
+    internal fun generateSimpleChart(
         entries: List<FeedEntry>,
         fieldIndices: Set<Int>,
         isNormalized: Boolean = true,
-        width: Int = 400,
-        height: Int = 150,
+        width: Int = 480,
+        height: Int = 200,
         bgColor: Int = Color.TRANSPARENT,
         fieldColorsOverride: Map<Int, String>? = null
     ): Bitmap? {
@@ -112,7 +113,7 @@ object WidgetChartGenerator {
             val parsedColor = try {
                 Color.parseColor(colorStr)
             } catch (e: Exception) {
-                android.util.Log.w("TS_DEBUG", "WidgetChartGenerator: Invalid color '$colorStr', using gray", e)
+                android.util.Log.w(TAG, "Invalid color '$colorStr', using gray", e)
                 Color.GRAY
             }
             val paint = Paint().apply {
@@ -126,10 +127,12 @@ object WidgetChartGenerator {
 
             val path = Path()
             val stepX = width.toFloat() / (dataPoints.size - 1)
+            val yPad = 3f // prevent stroke clipping at canvas edges
+            val drawH = height - yPad * 2
             
             dataPoints.forEachIndexed { index, value ->
                 val x = index * stepX
-                val y = height - ((value - minVal) / range * height).toFloat()
+                val y = yPad + drawH - ((value - minVal) / range * drawH).toFloat()
                 
                 if (index == 0) {
                     path.moveTo(x, y)
@@ -142,4 +145,74 @@ object WidgetChartGenerator {
 
         return bitmap
     }
+
+    /**
+     * Density‑aware convenience overload.
+     *
+     * Computes the output bitmap dimensions from screen density so the chart
+     * fills the widget proportionally on every device instead of using a
+     * fixed 480 × 200 canvas.
+     *
+     * @param chartWidthDp  nominal chart width in dp (default 280 — a typical
+     *                      3‑cell widget after subtracting header/fields).
+     * @param chartHeightDp nominal chart height in dp (default 160).
+     */
+    fun generateSimpleChart(
+        context: Context,
+        entries: List<FeedEntry>,
+        fieldIndices: Set<Int>,
+        isNormalized: Boolean = true,
+        chartWidthDp: Int = 280,
+        chartHeightDp: Int = 160,
+        bgColor: Int = Color.TRANSPARENT,
+        fieldColorsOverride: Map<Int, String>? = null
+    ): Bitmap? {
+        val density = context.resources.displayMetrics.density
+        return generateSimpleChart(
+            entries = entries,
+            fieldIndices = fieldIndices,
+            isNormalized = isNormalized,
+            width = (chartWidthDp * density).toInt(),
+            height = (chartHeightDp * density).toInt(),
+            bgColor = bgColor,
+            fieldColorsOverride = fieldColorsOverride
+        )
+    }
+
+    /**
+     * One‑shot helper: generate a density‑scaled chart and return it as a
+     * Base64‑encoded PNG string, or null. Eliminates duplicated
+     * bitmap‑to‑Base64 code in DataSyncWorker and DataSyncService.
+     */
+    internal fun generateChartBase64(
+        context: Context,
+        entries: List<FeedEntry>,
+        fieldIndices: Set<Int>,
+        isNormalized: Boolean = true,
+        chartWidthDp: Int = 280,
+        chartHeightDp: Int = 160,
+        fieldColorsOverride: Map<Int, String>? = null
+    ): String? {
+        val bitmap = generateSimpleChart(
+            context = context,
+            entries = entries,
+            fieldIndices = fieldIndices,
+            isNormalized = isNormalized,
+            chartWidthDp = chartWidthDp,
+            chartHeightDp = chartHeightDp,
+            fieldColorsOverride = fieldColorsOverride
+        ) ?: return null
+        return try {
+            val stream = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 90, stream)
+            bitmap.recycle()
+            android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.DEFAULT)
+        } catch (e: Exception) {
+            bitmap.recycle()
+            android.util.Log.w(TAG, "generateChartBase64: Base64 encoding failed", e)
+            null
+        }
+    }
+
+    private const val TAG = "WidgetChartGenerator"
 }

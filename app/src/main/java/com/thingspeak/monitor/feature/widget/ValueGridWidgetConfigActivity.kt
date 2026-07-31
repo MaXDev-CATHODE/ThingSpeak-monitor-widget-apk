@@ -24,11 +24,12 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
-import com.thingspeak.monitor.core.datastore.SavedChannel
 import com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme
 import com.thingspeak.monitor.core.worker.DataSyncWorker
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -47,6 +48,12 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
 
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
     private var isConfigurationDone = false
+    private val saveGuard = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val asyncScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
+
+    private val lastRefreshTimestamp = java.util.concurrent.atomic.AtomicLong(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,7 +65,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                 AppWidgetManager.EXTRA_APPWIDGET_ID,
                 AppWidgetManager.INVALID_APPWIDGET_ID
             )
-            android.util.Log.d("TS_DEBUG", "Activity started with appWidgetId=$appWidgetId")
+            android.util.Log.d(WIDGET_LOG_TAG, "Activity started with appWidgetId=$appWidgetId")
         }
 
         val resultValue = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -110,12 +117,17 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                         isGridMode = true,
                         availableChannels = savedChannels,
                         onRefreshRequest = { channelId, key ->
+                            val now = System.currentTimeMillis()
+                            if (now - lastRefreshTimestamp.getAndSet(now) < 3000L) {
+                                android.util.Log.d(WIDGET_LOG_TAG, "ValueGridConfig: refresh debounced for $channelId")
+                                return@WidgetConfigScreen
+                            }
                             coroutineScope.launch {
                                 try {
                                     val ch = savedChannels.find { it.id == channelId }
                                     repository.refreshFeed(channelId, key, chartTimespan = ch?.chartTimespan)
                                 } catch (e: Exception) {
-                                    android.util.Log.e("TS_DEBUG", "ValueGridWidgetConfig: refreshFeed failed for $channelId", e)
+                                    android.util.Log.e(WIDGET_LOG_TAG, "ValueGridWidgetConfig: refreshFeed failed for $channelId", e)
                                 }
                             }
                         },
@@ -133,50 +145,32 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                         initialVisibleFields = savedVisibleFields ?: existing?.widgetVisibleFields ?: emptySet(),
                         initialAlertRules = initialAlertRules,
                         onSave = { channelId, apiKey, name, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResultsCount, alertRules ->
+                            if (!saveGuard.compareAndSet(false, true)) return@WidgetConfigScreen
                             isSaving = true
                             coroutineScope.launch {
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                                     try {
-                                        android.util.Log.d("TS_DEBUG", "onSave triggered for channel $channelId, widget $appWidgetId")
+                                        android.util.Log.d(WIDGET_LOG_TAG, "onSave triggered for channel $channelId, widget $appWidgetId")
 
-                                        // 1. Update Core Channel Info (API Key, Name Only)
-                                        val existingChannel = channelPreferences.observe().first().find { it.id == channelId }
-                                        val updatedChannel = (existingChannel ?: SavedChannel(id = channelId, name = name)).copy(
-                                            id = channelId,
-                                            name = name,
-                                            apiKey = apiKey,
-                                            lastSyncStatus = WidgetPrefsKeys.STATUS_NONE,
-                                            lastSyncTime = System.currentTimeMillis()
+                                        val entryPoint = EntryPointAccessors.fromApplication(
+                                            applicationContext, com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
                                         )
-                                            channelPreferences.save(updatedChannel)
-                                        android.util.Log.d("TS_DEBUG", "1. Core Channel info saved for $channelId")
+                                        WidgetUpdateHelper.saveWidgetCoreConfig(
+                                            entryPoint = entryPoint,
+                                            channelPreferences = channelPreferences,
+                                            widgetBindingRepository = widgetBindingRepository,
+                                            appWidgetId = appWidgetId,
+                                            channelId = channelId,
+                                            apiKey = apiKey,
+                                            channelName = name,
+                                            alertRules = alertRules
+                                        )
 
-                                        // 2. Alert Rules saving (Unified - Global per channel)
-                                        repository.deleteGlobalAlertRules(channelId)
-                                        alertRules.forEach { rule ->
-                                            repository.saveAlertRule(rule.copy(appWidgetId = null))
-                                        }
-                                        android.util.Log.d("TS_DEBUG", "Unified Alarms: Drawn ${alertRules.size} rules for channel $channelId")
-
-                                        // 3. Save binding synchronicly
-                                        widgetBindingRepository.saveBinding(appWidgetId, channelId)
-                                        android.util.Log.d("TS_DEBUG", "3. Binding DB saved synchronicly: $appWidgetId -> $channelId")
-
-                                        // Sync with Room DB for app UI consistency
-                                        repository.observeChannel(channelId).first()?.let { roomChannel ->
-                                            repository.updateChannel(roomChannel.copy(
-                                                name = name,
-                                                apiKey = apiKey
-                                            ))
-                                        }
-
-                                        // 4. Launch fire-and-forget background sync (standalone scope)
+                                        // Launch background sync via tracked scope
                                         val appContext = applicationContext
-                                        kotlinx.coroutines.CoroutineScope(
-                                            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
-                                        ).launch {
+                                        asyncScope.launch {
                                             try {
-                                                android.util.Log.d("TS_DEBUG", ">>> STARTING ASYNC SYNC V8 for $appWidgetId")
+                                                android.util.Log.d(WIDGET_LOG_TAG, ">>> STARTING ASYNC SYNC V8 for $appWidgetId")
 
                                                 // Update Glance DataStore
                                                 val gId = findWidgetGlanceId(appContext, appWidgetId, widgetClasses = listOf(ValueGridWidget::class.java))
@@ -197,32 +191,22 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                             this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
                                                         }
                                                     }
-                                                    android.util.Log.d("TS_DEBUG", "Async: DataStore updated for $appWidgetId")
+                                                    android.util.Log.d(WIDGET_LOG_TAG, "Async: DataStore updated for $appWidgetId")
                                                 }
 
-                                                ValueGridWidget().updateAll(appContext)
-
-                                                // SYSTEM SIGNAL
-                                                val updateIntent = Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
-                                                    putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
-                                                    setPackage(packageName)
-                                                }
-                                                appContext.sendBroadcast(updateIntent)
-                                                android.util.Log.d("TS_DEBUG", "Async: System signals sent.")
-
-                                                // Refresh feed and enqueue worker via proper WorkManager API
-                                                repository.refreshFeed(channelId, apiKey, chartTimespan = chartTimespanStr)
-
-                                                val workRequest = OneTimeWorkRequestBuilder<DataSyncWorker>().build()
+                                                // Enqueue worker for immediate one-shot sync
+                                                val workRequest = OneTimeWorkRequestBuilder<DataSyncWorker>()
+                                                    .setConstraints(DataSyncWorker.constraints())
+                                                    .build()
                                                 WorkManager.getInstance(appContext)
                                                     .enqueueUniqueWork(
                                                         "value_grid_config_refresh_$appWidgetId",
                                                         ExistingWorkPolicy.REPLACE,
                                                         workRequest
                                                     )
-                                                android.util.Log.d("TS_DEBUG", "Async: Worker enqueued via WorkManager.")
+                                                android.util.Log.d(WIDGET_LOG_TAG, "Async: Worker enqueued via WorkManager.")
                                             } catch (e: Exception) {
-                                                android.util.Log.e("TS_DEBUG", "Async: FATAL ERROR", e)
+                                                android.util.Log.e(WIDGET_LOG_TAG, "Async: FATAL ERROR", e)
                                                 ValueGridWidget().updateAll(appContext)
                                             }
                                         }
@@ -234,12 +218,12 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                 putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                                             }
                                             setResult(RESULT_OK, resultIntent)
-                                            android.util.Log.d("TS_DEBUG", ">>> RESULT_OK sent. Finishing.")
+                                            android.util.Log.d(WIDGET_LOG_TAG, ">>> RESULT_OK sent. Finishing.")
                                             finish()
                                         }
 
                                     } catch (e: Exception) {
-                                        android.util.Log.e("TS_DEBUG", "FATAL onSave error", e)
+                                        android.util.Log.e(WIDGET_LOG_TAG, "FATAL onSave error", e)
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                             finish()
                                         }
@@ -255,6 +239,10 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Only cancel async work if config was NOT completed — background sync must finish
+        if (!isConfigurationDone) {
+            asyncScope.cancel()
+        }
         if (!isConfigurationDone && !isChangingConfigurations) {
             setResult(RESULT_CANCELED)
         }

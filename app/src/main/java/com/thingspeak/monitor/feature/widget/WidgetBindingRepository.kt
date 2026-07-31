@@ -22,7 +22,7 @@ class WidgetBindingRepository @Inject constructor(
     fun observeChannelId(appWidgetId: Int): Flow<Long> {
         return widgetBindingDao.observeBinding(appWidgetId).map { entity ->
             val id = entity?.channelId ?: -1L
-            android.util.Log.d("TS_DEBUG", "Repo lookup: appWidgetId=$appWidgetId -> channelId=$id")
+            android.util.Log.d(WIDGET_LOG_TAG, "Repo lookup: appWidgetId=$appWidgetId -> channelId=$id")
             id
         }
     }
@@ -31,11 +31,11 @@ class WidgetBindingRepository @Inject constructor(
      * Persist the binding between appWidgetId and channelId in Room.
      */
     suspend fun saveBinding(appWidgetId: Int, channelId: Long) {
-        android.util.Log.d("TS_DEBUG", "Repo SAVE: appWidgetId=$appWidgetId -> channelId=$channelId")
+        android.util.Log.d(WIDGET_LOG_TAG, "Repo SAVE: appWidgetId=$appWidgetId -> channelId=$channelId")
         try {
             widgetBindingDao.upsertBinding(WidgetBindingEntity(appWidgetId, channelId))
         } catch (e: Exception) {
-            android.util.Log.e("TS_DEBUG", "Room exception on Save: widget=$appWidgetId", e)
+            android.util.Log.e(WIDGET_LOG_TAG, "Room exception on Save: widget=$appWidgetId", e)
         }
     }
 
@@ -43,7 +43,7 @@ class WidgetBindingRepository @Inject constructor(
      * Remove the binding when a widget is deleted.
      */
     suspend fun removeBinding(appWidgetId: Int) {
-        android.util.Log.d("TS_DEBUG", "Repo DELETE: appWidgetId=$appWidgetId")
+        android.util.Log.d(WIDGET_LOG_TAG, "Repo DELETE: appWidgetId=$appWidgetId")
         widgetBindingDao.deleteBinding(appWidgetId)
     }
 

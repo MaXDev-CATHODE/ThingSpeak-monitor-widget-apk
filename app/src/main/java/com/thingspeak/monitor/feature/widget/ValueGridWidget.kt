@@ -1,7 +1,6 @@
 package com.thingspeak.monitor.feature.widget
 
 import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Context
 import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidget
@@ -9,17 +8,11 @@ import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.state.GlanceStateDefinition
-import androidx.work.WorkManager
-import com.thingspeak.monitor.core.di.WidgetEntryPoint
-import com.thingspeak.monitor.core.worker.DataSyncWorker
-import dagger.hilt.android.EntryPointAccessors
-import kotlinx.coroutines.flow.first
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 class ValueGridWidget : GlanceAppWidget() {
@@ -27,29 +20,16 @@ class ValueGridWidget : GlanceAppWidget() {
     override val sizeMode = androidx.glance.appwidget.SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val entryPoint = EntryPointAccessors.fromApplication(context.applicationContext, WidgetEntryPoint::class.java)
-        val bindingRepo = entryPoint.widgetBindingRepository()
-        val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(id)
-        val boundChannelId = bindingRepo.getBindingSync(appWidgetId)
-
-        val realSyncIntervalMinutes: Long = try {
-            entryPoint.appPreferences().observeSyncInterval().first()
-        } catch (e: Exception) {
-            android.util.Log.w("TS_DEBUG", "Failed to read sync interval, using default", e)
-            DEFAULT_SYNC_INTERVAL_MINUTES
-        }
+        val gCtx = WidgetUpdateHelper.resolveGlanceContext(context, id)
 
         provideContent {
             val prefs = androidx.glance.currentState<androidx.datastore.preferences.core.Preferences>()
-            val data = loadWidgetDataFromPreferences(prefs, boundChannelId, realSyncIntervalMinutes)
+            val data = loadWidgetDataFromPreferences(prefs, gCtx.boundChannelId, gCtx.syncIntervalMinutes, skipChartBitmap = true)
 
-            // Self-Healing: trigger repair if prefs are empty/stale (one-shot guarded)
-            val healAttempted = prefs[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] ?: false
-            if (data.channelName == WidgetPrefsKeys.LOADING_PLACEHOLDER &&
-                boundChannelId != -1L && !data.isRefreshing && !healAttempted
-            ) {
-                androidx.compose.runtime.LaunchedEffect(boundChannelId) {
-                    updateAppWidget(context, appWidgetId)
+            if (WidgetUpdateHelper.shouldTriggerSelfHeal(prefs, data, gCtx.boundChannelId)) {
+                androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
+                    WidgetUpdateHelper.bumpHealRetry(context, id)
+                    updateAppWidget(context, gCtx.appWidgetId)
                 }
             }
 
@@ -73,19 +53,19 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
     @Inject
     lateinit var repository: WidgetBindingRepository
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         WidgetReceiver.enqueuePeriodicRefresh(context)
-        android.util.Log.i("TS_DEBUG", "First ValueGridWidget added - periodic refresh enqueued")
+        android.util.Log.i(WIDGET_LOG_TAG, "First ValueGridWidget added - periodic refresh enqueued")
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
         WidgetReceiver.enqueuePeriodicRefreshIfNeeded(context)
         appWidgetIds.forEach { id ->
-            scope.launch {
+            updateScope.launch {
                 try {
                     val boundId = repository.getBindingSync(id)
                     if (boundId > 0) {
@@ -93,11 +73,11 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
                         if (gId != null) {
                             updateAppWidgetState(
                                 context, WidgetPreferencesStateDefinition, gId
-                            ) { p ->
-                                p.toMutablePreferences().apply {
+                            ) { branch ->
+                                branch.toMutablePreferences().apply {
                                     if (this[WidgetPrefsKeys.KEY_CHANNEL_ID] != boundId) {
                                         this[WidgetPrefsKeys.KEY_CHANNEL_ID] = boundId
-                                        android.util.Log.i("TS_DEBUG", "Synced binding to Glance for grid $id -> $boundId")
+                                        android.util.Log.i(WIDGET_LOG_TAG, "Synced binding to Glance for grid $id -> $boundId")
                                     }
                                 }
                             }
@@ -105,7 +85,7 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
                         }
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("TS_DEBUG", "Failed to push binding for grid $id", e)
+                    android.util.Log.e(WIDGET_LOG_TAG, "Failed to push binding for grid $id", e)
                 }
             }
         }
@@ -113,35 +93,25 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
-        android.util.Log.i("TS_DEBUG", "onDeleted: ids=${appWidgetIds.joinToString()}")
-        val manager = AppWidgetManager.getInstance(context)
-        val remainingGlance = manager.getAppWidgetIds(
-            ComponentName(context, WidgetReceiver::class.java)
-        )
-        val remainingValueGridWidgets = manager.getAppWidgetIds(
-            ComponentName(context, ValueGridWidgetReceiver::class.java)
-        )
-        if (remainingGlance.isEmpty() && remainingValueGridWidgets.isEmpty()) {
-            WorkManager.getInstance(context).cancelUniqueWork(DataSyncWorker.WORK_NAME)
-            android.util.Log.w("TS_DEBUG", "Last widget of any type removed - periodic refresh cancelled")
-        }
+        android.util.Log.i(WIDGET_LOG_TAG, "onDeleted: ids=${appWidgetIds.joinToString()}")
+
+        WidgetUpdateHelper.cancelRefreshIfNoWidgetsLeft(context)
 
         appWidgetIds.forEach { id ->
             cancelRefreshTimeout(id)
-            scope.launch {
+            updateScope.launch {
                 try {
                     repository.removeBinding(id)
-                    android.util.Log.i("TS_DEBUG", "cleaned Room binding for $id")
+                    WidgetChartCache.clear(context, id)
+                    android.util.Log.i(WIDGET_LOG_TAG, "cleaned Room binding and chart cache for $id")
                 } catch (e: Exception) {
-                    android.util.Log.e("TS_DEBUG", "failed to clean Room binding for $id", e)
+                    android.util.Log.e(WIDGET_LOG_TAG, "failed to clean Room binding for $id", e)
                 }
             }
         }
     }
 
-    // Gracefully cancel scope when service lifecycle ends
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        scope.cancel()
     }
 }

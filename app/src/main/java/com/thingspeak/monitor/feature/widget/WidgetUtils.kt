@@ -10,7 +10,6 @@ import java.util.Locale
  * Utility functions for the Glance widget.
  */
 object WidgetUtils {
-    private const val STALE_THRESHOLD_MS = 15 * 60 * 1000L // 15 minutes
 
     fun parseIsoTime(iso: String): Long? {
         return try {
@@ -20,7 +19,7 @@ object WidgetUtils {
         }
     }
 
-    fun isDataStale(createdAt: String, thresholdMs: Long = STALE_THRESHOLD_MS): Boolean {
+    fun isDataStale(createdAt: String, thresholdMs: Long): Boolean {
         val timestamp = parseIsoTime(createdAt) ?: return true
         val elapsed = System.currentTimeMillis() - timestamp
         return elapsed > thresholdMs

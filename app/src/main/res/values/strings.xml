@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ThingSpeak Monitor</string>
-    <string name="widget_name_glance">Glance Widget</string>
-    <string name="widget_name_grid">Value Grid Widget</string>
+    <string name="widget_name_glance">ThingSpeak Chart</string>
+    <string name="widget_name_grid">ThingSpeak Fields</string>
     <string name="widget_description">Monitor ThingSpeak channel data</string>
     <string name="widget_configure_title">Configure Widget</string>
     <string name="widget_channel_id_label">Channel ID</string>

@@ -5,6 +5,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,6 +27,8 @@ class AlertManagerImpl @Inject constructor(
 ) : AlertManager {
 
     private val notificationManager = NotificationManagerCompat.from(context)
+    // Cooldown map to prevent spamming the same alert within 5 minutes
+    private val recentAlerts = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     init {
         createNotificationChannels()
@@ -58,6 +61,13 @@ class AlertManagerImpl @Inject constructor(
         }
 
         if (violations.isEmpty()) return
+
+        val signatureString = violations.joinToString("|") { "${it.fieldNumber}:${it.minValue}:${it.maxValue}" }
+        if (isDuplicateAlert(signatureString)) {
+            android.util.Log.d("AlertManager", "Skipping duplicate alert for channel $channelId (cooldown active)")
+            return
+        }
+        val notificationId = toNotificationId(channelId, signatureString)
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -94,6 +104,8 @@ class AlertManagerImpl @Inject constructor(
             .setGroup(GROUP_KEY_THINGSPEAK_ALERTS)
             .setAutoCancel(true)
             .setDefaults(Notification.DEFAULT_ALL)
+            .addAction(buildDismissAction(context, notificationId, SUMMARY_ID))
+            .addAction(buildRefreshAction(context, notificationId, SUMMARY_ID))
             .build()
 
         val summaryNotification = NotificationCompat.Builder(context, ALERTS_CHANNEL_ID)
@@ -105,9 +117,6 @@ class AlertManagerImpl @Inject constructor(
             .setGroupSummary(true)
             .setAutoCancel(true)
             .build()
-
-        val signatureString = violations.joinToString("|") { "${it.fieldNumber}:${it.minValue}:${it.maxValue}" }
-        val notificationId = (channelId.hashCode() * 31 + signatureString.hashCode())
 
         try {
             android.util.Log.d("AlertManager", "Posting notification for channel $channelId. ID=$notificationId. Channel=$ALERTS_CHANNEL_ID")
@@ -127,6 +136,13 @@ class AlertManagerImpl @Inject constructor(
         }
 
         if (violations.isEmpty()) return
+
+        val signatureString = violations.joinToString("|") { "${it.fieldNumber}:${it.condition}:${it.thresholdValue}" }
+        if (isDuplicateAlert(signatureString)) {
+            android.util.Log.d("AlertManager", "Skipping duplicate ruleAlert for channel $channelId (cooldown active)")
+            return
+        }
+        val notificationId = toNotificationId(channelId, signatureString)
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -165,6 +181,8 @@ class AlertManagerImpl @Inject constructor(
             .setGroup(GROUP_KEY_THINGSPEAK_ALERTS)
             .setAutoCancel(true)
             .setDefaults(Notification.DEFAULT_ALL)
+            .addAction(buildDismissAction(context, notificationId, SUMMARY_ID))
+            .addAction(buildRefreshAction(context, notificationId, SUMMARY_ID))
             .build()
 
         val summaryNotification = NotificationCompat.Builder(context, ALERTS_CHANNEL_ID)
@@ -176,9 +194,6 @@ class AlertManagerImpl @Inject constructor(
             .setGroupSummary(true)
             .setAutoCancel(true)
             .build()
-
-        val signatureString = violations.joinToString("|") { "${it.fieldNumber}:${it.condition}:${it.thresholdValue}" }
-        val notificationId = (channelId.hashCode() * 37 + signatureString.hashCode())
 
         try {
             notificationManager.notify(notificationId, notification)
@@ -199,9 +214,82 @@ class AlertManagerImpl @Inject constructor(
         }
     }
 
+    /**
+     * Checks if a similar alert was recently notified (within last
+     * COOLDOWN_MS). Prevents notification spam when thresholds are
+     * repeatedly violated at high sync frequencies.
+     */
+    private fun isDuplicateAlert(signature: String): Boolean {
+        val now = System.currentTimeMillis()
+        val last = recentAlerts[signature]
+        if (last != null && (now - last) < COOLDOWN_MS) {
+            return true
+        }
+        recentAlerts[signature] = now
+        // Cleanup stale entries (> 10 minutes)
+        recentAlerts.entries.removeAll { (_, timestamp) -> now - timestamp > 10 * 60_000 }
+        return false
+    }
+
+    private fun buildDismissAction(
+        ctx: Context,
+        notificationId: Int,
+        summaryId: Int
+    ): NotificationCompat.Action {
+        val dismissIntent = Intent(ctx, AlertActionReceiver::class.java).apply {
+            action = AlertActionReceiver.ACTION_DISMISS
+            putExtra(AlertActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(AlertActionReceiver.EXTRA_SUMMARY_ID, summaryId)
+        }
+        val dismissPending = PendingIntent.getBroadcast(
+            ctx, notificationId, dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Action.Builder(0, "DISMISS", dismissPending).build()
+    }
+
+    private fun buildRefreshAction(
+        ctx: Context,
+        notificationId: Int,
+        summaryId: Int
+    ): NotificationCompat.Action {
+        val refreshIntent = Intent(ctx, AlertActionReceiver::class.java).apply {
+            action = AlertActionReceiver.ACTION_REFRESH
+            putExtra(AlertActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(AlertActionReceiver.EXTRA_SUMMARY_ID, summaryId)
+        }
+        val refreshPending = PendingIntent.getBroadcast(
+            ctx, summaryId, refreshIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Action.Builder(0, "Sync Now", refreshPending).build()
+    }
+
     companion object {
         private const val ALERTS_CHANNEL_ID = "alerts_channel_v2"
         private const val GROUP_KEY_THINGSPEAK_ALERTS = "com.thingspeak.monitor.ALERTS_GROUP"
         private const val SUMMARY_ID = 1000
+        private const val COOLDOWN_MS = 5 * 60 * 1000L // 5 minutes
+
+        /**
+         * Generates a non‑negative, collision‑resistant notification ID.
+         *
+         * Why explicit, not hashCode arithmetic:
+         *   - Long.hashCode() can be negative (e.g. channelId  ≥ 2^31).
+         *   - String.hashCode() can be negative.
+         *   - Multiplying and adding two possibly‑negative Ints overflows
+         *     silently, producing a third sign‑flipped value.
+         *   - NotificationManager on some API levels ignores or crashes on
+         *     negative IDs.
+         *
+         * This implementation concatenates the channel and the alert
+         * signature into one string, takes the JVM hashCode, and clears
+         * the sign bit. Collision probability is the same as the old
+         * approach but the result is always in 0‥2147483647.
+         */
+        private fun toNotificationId(channelId: Long, signatureString: String): Int {
+            val combined = "$channelId|$signatureString"
+            return combined.hashCode() and Int.MAX_VALUE
+        }
     }
 }

@@ -114,6 +114,19 @@ android {
     }
 }
 
+// KLS (Kotlin Language Server / "Kotlin by JetBrains" VS Code extension) import workaround.
+// The KLS Gradle importer queries task-backed providers of the androidTest/unitTest
+// components (e.g. generateDebugAndroidTestBuildConfig, KSP generated sources) before
+// those tasks have run, which aborts the whole model build -> "empty set of source sets"
+// -> no diagnostics / unresolved external libraries in the editor.
+// Forcing the generator tasks to run as part of `prepareKotlinIdeaImport` fixes the query
+// (mirrors kotlin-lsp#225 / PR #233). Harmless for regular CLI builds.
+tasks.matching { it.name == "prepareKotlinIdeaImport" }.configureEach {
+    dependsOn(tasks.matching { it.name.startsWith("generateDebugAndroidTest") })
+    dependsOn(tasks.matching { it.name.startsWith("kspDebugAndroidTest") })
+    dependsOn(tasks.matching { it.name.startsWith("kspDebugUnitTest") })
+}
+
 dependencies {
     // ── Compose BOM ──────────────────────────────────────────────
     val composeBom = platform(libs.compose.bom)

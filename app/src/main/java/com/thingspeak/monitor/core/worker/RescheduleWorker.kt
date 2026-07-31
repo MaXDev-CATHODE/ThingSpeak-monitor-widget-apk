@@ -23,7 +23,7 @@ class RescheduleWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         return try {
             val intervalMinutes = appPreferences.observeSyncInterval().first()
-            DataSyncWorker.schedule(applicationContext, intervalMinutes)
+            DataSyncWorker.scheduleWithUpdate(applicationContext, intervalMinutes)
 
             val isHighFreqEnabled = appPreferences.observeIsHighFrequencyEnabled().first()
             if (isHighFreqEnabled) {

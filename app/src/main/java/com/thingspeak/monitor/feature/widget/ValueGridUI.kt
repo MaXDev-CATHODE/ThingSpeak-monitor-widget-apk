@@ -17,22 +17,31 @@ import androidx.glance.text.TextStyle
 
 @Composable
 fun ValueGridContent(context: Context, data: WidgetData) {
+    ValueGridContentImpl(context, data)
+}
+
+@Composable
+private fun ValueGridContentImpl(context: Context, data: WidgetData) {
     val size = LocalSize.current
-    val isSmallHeight = size.height < 120.dp
+    val isSmallHeight = size.height < WidgetPrefsKeys.HEIGHT_SMALL_GRID.dp
     
     val isStale = data.entry?.let { 
         WidgetUtils.isDataStale(it.createdAt, data.syncIntervalMinutes * 60 * 1000L) 
     } ?: true
 
-    val baseColor = data.bgColorHex?.let { 
-        try { android.graphics.Color.parseColor(it) } catch (e: Exception) { android.graphics.Color.WHITE }
-    } ?: android.graphics.Color.WHITE
+    // Dark mode auto-detection
+    val effectiveBgHex = darkModeAutoBgColor(data, context)
+    val isDarkMode = isSystemDarkMode(context)
+    val baseColor = resolveSystemAwareBackground(
+        prefHex = effectiveBgHex,
+        isDarkMode = isDarkMode,
+        context = context,
+        colorMode = data.bgColorMode
+    )
 
     val isDarkBg = isColorDark(baseColor)
-    
-    val contentColorVal = data.textColor?.let {
-        try { Color(android.graphics.Color.parseColor(it)) } catch (e: Exception) { null }
-    } ?: (if (isDarkBg) Color.White else Color.Black)
+
+    val contentColorVal = darkModeAutoTextColor(data, isDarkBg)
     
     val secondaryContentColorVal = contentColorVal.copy(alpha = 0.7f)
 
@@ -94,6 +103,14 @@ fun ValueGridContent(context: Context, data: WidgetData) {
                             )
                         }
                     }
+                } else if (data.channelName != WidgetPrefsKeys.LOADING_PLACEHOLDER && data.channelId != -1L) {
+                    Text(
+                        text = "Waiting for data...",
+                        style = TextStyle(
+                            color = ColorProvider(contentColorVal.copy(alpha = 0.35f)),
+                            fontSize = (if (isSmallHeight) 8 else 9).sp
+                        )
+                    )
                 }
             }
             
@@ -221,17 +238,7 @@ fun ValueTile(
 ) {
     val name = data.fieldNames[index]?.takeIf { it.isNotBlank() } ?: "Field $index"
     val unit = data.fieldUnits[index] ?: ""
-    val rawValue = when(index) {
-        1 -> data.entry?.field1
-        2 -> data.entry?.field2
-        3 -> data.entry?.field3
-        4 -> data.entry?.field4
-        5 -> data.entry?.field5
-        6 -> data.entry?.field6
-        7 -> data.entry?.field7
-        8 -> data.entry?.field8
-        else -> null
-    }
+    val rawValue = data.entry?.getField(index)
 
     val tileValue = if (rawValue != null && rawValue != "null") {
         rawValue.toDoubleOrNull()?.let { num ->
@@ -310,9 +317,11 @@ fun ValueTile(
                 if (isViolated) {
                     Spacer(GlanceModifier.width(2.dp))
                     Text(
-                        text = "🔔",
+                        text = "!",
                         style = androidx.glance.text.TextStyle(
-                            fontSize = (valueFontSize.value * 0.7f).toInt().sp
+                            color = ColorProvider(Color.Red),
+                            fontSize = (valueFontSize.value * 0.7f).toInt().sp,
+                            fontWeight = FontWeight.Bold
                         )
                     )
                 }

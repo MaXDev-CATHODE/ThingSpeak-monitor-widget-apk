@@ -631,15 +631,7 @@ fun WidgetConfigScreen(
                 }
             }
             
-            if (!isValid && !isSaving) {
-                 Box(
-                     modifier = Modifier
-                         .matchParentSize()
-                         .clickable {
-                             android.util.Log.d("WidgetConfig", "Save button disabled.")
-                         }
-                 )
-            }
+            
         }
         Spacer(modifier = Modifier.height(24.dp))
     }

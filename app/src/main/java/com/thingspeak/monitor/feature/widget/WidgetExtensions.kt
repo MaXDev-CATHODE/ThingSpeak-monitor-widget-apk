@@ -1,6 +1,7 @@
 package com.thingspeak.monitor.feature.widget
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -14,13 +15,91 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+const val WIDGET_LOG_TAG = "TS_DEBUG"
+const val DEFAULT_SYNC_INTERVAL_MINUTES = 30L
+
 private val refreshTimeoutJobs = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.Job>()
+private val activeRefreshes = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
 
 fun cancelRefreshTimeout(appWidgetId: Int) {
-    refreshTimeoutJobs.remove(appWidgetId)?.cancel()
+    synchronized(refreshTimeoutJobsLock) { refreshTimeoutJobs.remove(appWidgetId)?.cancel() }
+    activeRefreshes.remove(appWidgetId)
 }
 
-const val DEFAULT_SYNC_INTERVAL_MINUTES = 30L
+/** Must be called when a refresh completes (success or failure) to prevent map leak. */
+fun onRefreshCompleted(appWidgetId: Int) {
+    synchronized(refreshTimeoutJobsLock) { refreshTimeoutJobs.remove(appWidgetId) }
+    activeRefreshes.remove(appWidgetId)
+}
+
+/** Lock object shared with the timeout scheduling code below. */
+@PublishedApi internal val refreshTimeoutJobsLock = Any()
+
+fun isSystemDarkMode(context: Context): Boolean {
+    val nightMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+    return nightMode == Configuration.UI_MODE_NIGHT_YES
+}
+
+fun darkModeAutoBgColor(data: WidgetData, context: Context): String? {
+    val hex = data.bgColorHex
+    if (isSystemDarkMode(context) && hex != null) {
+        val color = try { android.graphics.Color.parseColor(hex) } catch (_: Exception) { null }
+        if (color != null && isColorDark(color).not()) {
+            // Use system dark widget background when available (API 31+), fall back to dark gray
+            val darkColor = try {
+                context.resources.getColor(android.R.color.background_dark, null)
+            } catch (_: Exception) {
+                android.graphics.Color.parseColor("#212121")
+            }
+            return String.format("#%06X", 0xFFFFFF and darkColor)
+        }
+    }
+    return hex
+}
+
+/**
+ * Resolves background color for widget, supporting system-wide theme colors
+ * (Material You / Dynamic Colors) when the user opts into the system color mode.
+ */
+fun resolveSystemAwareBackground(
+    prefHex: String?,
+    isDarkMode: Boolean,
+    context: Context,
+    colorMode: String? = WidgetPrefsKeys.COLOR_MODE_CUSTOM
+): Int {
+    if (colorMode == WidgetPrefsKeys.COLOR_MODE_SYSTEM) {
+        // Use system accent/dynamic color when available
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            try {
+                val accentRes = if (isDarkMode)
+                    android.R.color.system_accent1_200
+                else
+                    android.R.color.system_accent1_500
+                context.resources.getColor(accentRes, context.theme)
+            } catch (_: Exception) {
+                if (isDarkMode) android.graphics.Color.parseColor("#212121")
+                else android.graphics.Color.parseColor("#FFFFFF")
+            }
+        } else {
+            if (isDarkMode) android.graphics.Color.parseColor("#212121")
+            else android.graphics.Color.parseColor("#FFFFFF")
+        }
+    }
+    return try {
+        android.graphics.Color.parseColor(prefHex ?: "#FFFFFF")
+    } catch (_: Exception) {
+        android.graphics.Color.WHITE
+    }
+}
+
+fun darkModeAutoTextColor(data: WidgetData, isDarkBg: Boolean): androidx.compose.ui.graphics.Color {
+    val tc = data.textColor
+    if (tc != null && tc.startsWith("#")) {
+        return try { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(tc)) }
+            catch (_: Exception) { if (isDarkBg) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Black }
+    }
+    return if (isDarkBg) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Black
+}
 
 val Int.sp: TextUnit get() = TextUnit(this.toFloat(), TextUnitType.Sp)
 val Int.dp: Dp get() = Dp(this.toFloat())
@@ -47,7 +126,10 @@ suspend fun findWidgetGlanceId(
     context: Context,
     appWidgetId: Int,
     maxRetries: Int = 2,
-    widgetClasses: List<Class<out androidx.glance.appwidget.GlanceAppWidget>> = emptyList()
+    widgetClasses: List<Class<out androidx.glance.appwidget.GlanceAppWidget>> = listOf(
+        ThingSpeakGlanceWidget::class.java,
+        ValueGridWidget::class.java
+    )
 ): androidx.glance.GlanceId? {
     var retries = maxRetries
     val manager = androidx.glance.appwidget.GlanceAppWidgetManager(context)
@@ -55,7 +137,7 @@ suspend fun findWidgetGlanceId(
         try {
             val officialId = manager.getGlanceIdBy(appWidgetId)
             if (officialId != null) {
-                android.util.Log.d("TS_DEBUG", "findGlanceId: found via official API for $appWidgetId")
+                android.util.Log.d(WIDGET_LOG_TAG, "findGlanceId: found via official API for $appWidgetId")
                 return officialId
             }
             for (widgetClass in widgetClasses) {
@@ -63,17 +145,17 @@ suspend fun findWidgetGlanceId(
                     manager.getAppWidgetId(it) == appWidgetId
                 }
                 if (foundId != null) {
-                    android.util.Log.d("TS_DEBUG", "findGlanceId: exhaustive search found for $appWidgetId")
+                    android.util.Log.d(WIDGET_LOG_TAG, "findGlanceId: exhaustive search found for $appWidgetId")
                     return foundId
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.w("TS_DEBUG", "findGlanceId: attempt failed for $appWidgetId ($retries left)", e)
+            android.util.Log.w(WIDGET_LOG_TAG, "findGlanceId: attempt failed for $appWidgetId ($retries left)", e)
         }
         if (retries > 1) kotlinx.coroutines.delay(100)
         retries--
     }
-    android.util.Log.e("TS_DEBUG", "findGlanceId: FAILED for $appWidgetId after $maxRetries retries")
+    android.util.Log.e(WIDGET_LOG_TAG, "findGlanceId: FAILED for $appWidgetId after $maxRetries retries")
     return null
 }
 
@@ -81,18 +163,21 @@ fun parseCachedEntry(entryJson: String?): FeedEntryEntity? {
     if (entryJson == null) return null
     return try {
         val jsonObj = org.json.JSONObject(entryJson)
+        val rawFields = (1..8).map { i ->
+            jsonObj.optString("field$i", "").takeIf { it != "null" && it.isNotBlank() }
+        }
         FeedEntryEntity(
             channelId = jsonObj.optLong("channelId", 0L),
             createdAt = jsonObj.optString("createdAt", ""),
             entryId = jsonObj.optLong("entryId", 0L),
-            field1 = jsonObj.optString("field1", "").takeIf { it != "null" && it.isNotBlank() },
-            field2 = jsonObj.optString("field2", "").takeIf { it != "null" && it.isNotBlank() },
-            field3 = jsonObj.optString("field3", "").takeIf { it != "null" && it.isNotBlank() },
-            field4 = jsonObj.optString("field4", "").takeIf { it != "null" && it.isNotBlank() },
-            field5 = jsonObj.optString("field5", "").takeIf { it != "null" && it.isNotBlank() },
-            field6 = jsonObj.optString("field6", "").takeIf { it != "null" && it.isNotBlank() },
-            field7 = jsonObj.optString("field7", "").takeIf { it != "null" && it.isNotBlank() },
-            field8 = jsonObj.optString("field8", "").takeIf { it != "null" && it.isNotBlank() }
+            field1 = rawFields[0],
+            field2 = rawFields[1],
+            field3 = rawFields[2],
+            field4 = rawFields[3],
+            field5 = rawFields[4],
+            field6 = rawFields[5],
+            field7 = rawFields[6],
+            field8 = rawFields[7]
         )
     } catch (e: Exception) {
         null
@@ -111,10 +196,26 @@ fun parseFieldJsonMap(jsonStr: String?): Map<Int, String> {
     }
 }
 
+/**
+ * Safe field accessor for FeedEntryEntity — eliminates duplicated when(fieldNum) branches.
+ */
+fun FeedEntryEntity.getField(fieldNum: Int): String? = when (fieldNum) {
+    1 -> field1
+    2 -> field2
+    3 -> field3
+    4 -> field4
+    5 -> field5
+    6 -> field6
+    7 -> field7
+    8 -> field8
+    else -> null
+}
+
 fun loadWidgetDataFromPreferences(
     prefs: Preferences,
     boundChannelId: Long,
-    realSyncIntervalMinutes: Long
+    realSyncIntervalMinutes: Long,
+    skipChartBitmap: Boolean = false
 ): WidgetData {
     val isRefreshing = prefs[WidgetPrefsKeys.KEY_IS_REFRESHING] ?: false
     val name = prefs[WidgetPrefsKeys.KEY_CHANNEL_NAME]
@@ -153,16 +254,21 @@ fun loadWidgetDataFromPreferences(
     val rounding = prefs[WidgetPrefsKeys.KEY_ROUNDING] ?: 2
     val lastSyncStatus = prefs[WidgetPrefsKeys.KEY_LAST_SYNC_STATUS] ?: WidgetPrefsKeys.STATUS_NONE
     val channelTimezone = prefs[WidgetPrefsKeys.KEY_CHANNEL_TIMEZONE]
+    val colorMode = prefs[WidgetPrefsKeys.KEY_BG_COLOR_MODE]
 
-    val chartBase64 = prefs[WidgetPrefsKeys.KEY_CHART_BITMAP]
-    val chartBitmap = if (chartBase64 != null) {
-        try {
-            val bytes = android.util.Base64.decode(chartBase64, android.util.Base64.DEFAULT)
-            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        } catch (e: Exception) {
-            null
-        }
-    } else null
+    // Chart loading: prefer file cache (new), fallback to legacy base64 (old DataStore)
+    val chartFile = if (skipChartBitmap) null else prefs[WidgetPrefsKeys.KEY_CHART_FILE]
+    val chartBitmap = if (chartFile != null) {
+        WidgetChartCache.load(chartFile)
+    } else {
+        val chartBase64 = if (skipChartBitmap) null else prefs[WidgetPrefsKeys.KEY_CHART_BITMAP]
+        if (chartBase64 != null) {
+            try {
+                val bytes = android.util.Base64.decode(chartBase64, android.util.Base64.DEFAULT)
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            } catch (e: Exception) { null }
+        } else null
+    }
 
     return WidgetData(
         channelName = name ?: WidgetPrefsKeys.LOADING_PLACEHOLDER,
@@ -186,7 +292,8 @@ fun loadWidgetDataFromPreferences(
         minSetFields = minSetFieldsSet,
         maxSetFields = maxSetFieldsSet,
         textColor = if (textColor.isNullOrBlank()) null else textColor,
-        channelTimezone = channelTimezone
+        channelTimezone = channelTimezone,
+        bgColorMode = colorMode
     )
 }
 
@@ -197,14 +304,38 @@ suspend fun performWidgetRefreshAction(
     uniqueWorkPrefix: String
 ) {
     val appWidgetId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
+
+    if (!activeRefreshes.add(appWidgetId)) {
+        android.util.Log.d(WIDGET_LOG_TAG, "performWidgetRefreshAction: refresh already in progress for $appWidgetId, ignored")
+        return
+    }
     val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(
         context.applicationContext,
         com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
     )
+
+    // Guard: don't start a sync cycle if the device is offline.
+    // The WorkManager constraint would silently enqueue the job forever;
+    // instead we short‑circuit and leave the refreshing flag unchanged.
+    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+    val activeNetwork = connectivityManager.activeNetwork
+    val isOnline = if (activeNetwork != null) {
+        val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
+        caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    } else false
+    if (!isOnline) {
+        android.util.Log.w(WIDGET_LOG_TAG, "performWidgetRefreshAction: device offline, refresh aborted for widget $appWidgetId")
+        activeRefreshes.remove(appWidgetId)
+        return
+    }
+
     val bindingRepo = entryPoint.widgetBindingRepository()
     val channelId = bindingRepo.getBindingSync(appWidgetId)
 
-    if (channelId == -1L) return
+    if (channelId == -1L) {
+        activeRefreshes.remove(appWidgetId)
+        return
+    }
 
     androidx.glance.appwidget.state.updateAppWidgetState(
         context, WidgetPreferencesStateDefinition, glanceId
@@ -233,14 +364,15 @@ suspend fun performWidgetRefreshAction(
             }
         }
         updateWidget()
+        activeRefreshes.remove(appWidgetId)
         return
     }
 
     // Fallback timeout: clear refreshing after 60s if worker didn't finish (previous job cancelled on re-tap)
-    refreshTimeoutJobs.remove(appWidgetId)?.cancel()
+    synchronized(refreshTimeoutJobsLock) { refreshTimeoutJobs.remove(appWidgetId)?.cancel() }
     val timeoutJob = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
         delay(60_000)
-        refreshTimeoutJobs.remove(appWidgetId)
+        onRefreshCompleted(appWidgetId)
         val currentPrefs = androidx.glance.appwidget.state.getAppWidgetState(
             context, WidgetPreferencesStateDefinition, glanceId
         )
@@ -251,5 +383,5 @@ suspend fun performWidgetRefreshAction(
             updateWidget()
         }
     }
-    refreshTimeoutJobs[appWidgetId] = timeoutJob
+    synchronized(refreshTimeoutJobsLock) { refreshTimeoutJobs[appWidgetId] = timeoutJob }
 }

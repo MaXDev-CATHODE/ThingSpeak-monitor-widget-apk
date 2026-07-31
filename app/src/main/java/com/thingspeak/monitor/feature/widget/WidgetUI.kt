@@ -44,17 +44,25 @@ data class WidgetData(
     val chartType: String? = "line",
     val chartBitmap: android.graphics.Bitmap? = null,
     val isRefreshing: Boolean = false,
-    val channelTimezone: String? = null
+    val channelTimezone: String? = null,
+    val bgColorMode: String? = null
 )
 
 @Composable
 fun WidgetUI(data: WidgetData) {
+    // NOTE: try/catch around a composable call is not allowed by the Compose compiler.
+    // Glance handles widget composition errors natively (error placeholder).
+    WidgetUIContent(data)
+}
+
+@Composable
+private fun WidgetUIContent(data: WidgetData) {
     val context = LocalContext.current
     val size = LocalSize.current
     
     // Dynamic sizing based on widget dimensions
-    val isCompact = size.height < 140.dp || size.width < 200.dp
-    val isTiny = size.height < 100.dp || size.width < 150.dp
+    val isCompact = size.height < WidgetPrefsKeys.HEIGHT_COMPACT_THRESHOLD.dp || size.width < WidgetPrefsKeys.WIDTH_COMPACT_THRESHOLD.dp
+    val isTiny = size.height < WidgetPrefsKeys.HEIGHT_TINY_THRESHOLD.dp || size.width < WidgetPrefsKeys.WIDTH_TINY_THRESHOLD.dp
     
     val titleSize = when {
         isTiny -> 10
@@ -73,25 +81,34 @@ fun WidgetUI(data: WidgetData) {
     }
     val pad = if (isCompact) 4 else 8
     
-    val bgColor = try {
-        val hex = data.bgColorHex?.removePrefix("#") ?: "FFFFFF"
-        val alpha = (data.transparency * 255).toInt().toString(16).padStart(2, '0')
-        Color(android.graphics.Color.parseColor("#$alpha$hex"))
-    } catch (e: Exception) {
-        Color.White.copy(alpha = data.transparency)
+    // Dark mode auto-detection: swap default white bg → dark when system is dark
+    val effectiveBgHex = darkModeAutoBgColor(data, context)
+    val isDarkMode = isSystemDarkMode(context)
+    val baseColor = resolveSystemAwareBackground(
+        prefHex = effectiveBgHex,
+        isDarkMode = isDarkMode,
+        context = context,
+        colorMode = data.bgColorMode
+    )
+
+    val bgColor = if (data.isGlass) {
+        Color.White.copy(alpha = 0.12f)
+    } else {
+        try {
+            val hex = (effectiveBgHex?.removePrefix("#") ?: "FFFFFF")
+            val alpha = (data.transparency * 255).toInt().toString(16).padStart(2, '0')
+            Color(android.graphics.Color.parseColor("#$alpha$hex"))
+        } catch (e: Exception) {
+            Color.White.copy(alpha = data.transparency)
+        }
     }
 
-    val isDarkBg = isColorDark(android.graphics.Color.parseColor(data.bgColorHex ?: "#FFFFFF"))
-    val textColor = try {
-        val tc = data.textColor
-        if (tc != null && tc.startsWith("#")) {
-            Color(android.graphics.Color.parseColor(tc))
-        } else {
-            if (isDarkBg) Color.White else Color.Black
-        }
+    val isDarkBg = try {
+        isColorDark(baseColor)
     } catch (e: Exception) {
-        if (isDarkBg) Color.White else Color.Black
+        false
     }
+    val textColor = darkModeAutoTextColor(data, isDarkBg)
     
     val buttonBg = if (isDarkBg) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f)
 
@@ -129,24 +146,34 @@ fun WidgetUI(data: WidgetData) {
                         )
                     }
                 }
-                if (!isTiny && data.entry != null) {
-                    val timeStr = WidgetUtils.formatTime(data.entry.createdAt, data.channelTimezone)
-                    val isStale = WidgetUtils.isDataStale(data.entry.createdAt, data.syncIntervalMinutes * 60 * 1000L)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!isTiny) {
+                    if (data.entry != null) {
+                        val timeStr = WidgetUtils.formatTime(data.entry.createdAt, data.channelTimezone)
+                        val isStale = WidgetUtils.isDataStale(data.entry.createdAt, data.syncIntervalMinutes * 60 * 1000L)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Measured: $timeStr",
+                                style = TextStyle(
+                                    color = ColorProvider(textColor.copy(alpha = 0.6f)),
+                                    fontSize = (subSize - 1).sp
+                                )
+                            )
+                            if (isStale) {
+                                Spacer(GlanceModifier.width(3.dp))
+                                Text(
+                                    text = "⌛",
+                                    style = TextStyle(color = ColorProvider(textColor.copy(alpha = 0.6f)), fontSize = (subSize - 1).sp)
+                                )
+                            }
+                        }
+                    } else if (data.channelName != WidgetPrefsKeys.LOADING_PLACEHOLDER && data.channelId != -1L) {
                         Text(
-                            text = "Measured: $timeStr",
+                            text = "Waiting for data...",
                             style = TextStyle(
-                                color = ColorProvider(textColor.copy(alpha = 0.6f)),
+                                color = ColorProvider(textColor.copy(alpha = 0.35f)),
                                 fontSize = (subSize - 1).sp
                             )
                         )
-                        if (isStale) {
-                            Spacer(GlanceModifier.width(3.dp))
-                            Text(
-                                text = "⌛",
-                                style = TextStyle(color = ColorProvider(textColor.copy(alpha = 0.6f)), fontSize = (subSize - 1).sp)
-                            )
-                        }
                     }
                 }
             }
@@ -157,7 +184,7 @@ fun WidgetUI(data: WidgetData) {
                     modifier = GlanceModifier
                         .background(buttonBg)
                         .cornerRadius(6.dp)
-                        .clickable(actionRunCallback<EditActionV2>())
+                        .clickable(actionRunCallback<GlanceEditAction>())
                 ) {
                     Text(
                         text = "✎",
@@ -174,7 +201,7 @@ fun WidgetUI(data: WidgetData) {
                     modifier = GlanceModifier
                         .background(buttonBg)
                         .cornerRadius(6.dp)
-                        .clickable(actionRunCallback<RefreshAction>())
+                        .clickable(actionRunCallback<GlanceRefreshAction>())
                 ) {
                     Text(
                         text = if (data.isRefreshing) "●" else "↻",
@@ -199,23 +226,13 @@ fun WidgetUI(data: WidgetData) {
         }
         
         val maxFields = when {
-            isTiny -> 2
-            isCompact -> 4
+            isTiny -> WidgetPrefsKeys.TINY_MAX_FIELDS
+            isCompact -> WidgetPrefsKeys.COMPACT_MAX_FIELDS
             else -> 8
         }
         
         fieldsToShow.take(maxFields).forEach { fieldNum ->
-            val value = when(fieldNum) {
-                1 -> data.entry?.field1
-                2 -> data.entry?.field2
-                3 -> data.entry?.field3
-                4 -> data.entry?.field4
-                5 -> data.entry?.field5
-                6 -> data.entry?.field6
-                7 -> data.entry?.field7
-                8 -> data.entry?.field8
-                else -> null
-            }
+            val value = data.entry?.getField(fieldNum)
             
             val unit = data.fieldUnits[fieldNum] ?: ""
             val roundedValue = if (value != null && value != "null") {
@@ -291,5 +308,31 @@ fun WidgetUI(data: WidgetData) {
     }
 }
 
-class RefreshAction : RefreshWidgetAction({ ThingSpeakGlanceWidget() }, "glance_refresh_sync")
-class EditActionV2 : EditWidgetAction(WidgetConfigActivity::class.java)
+class GlanceRefreshAction : RefreshWidgetAction({ ThingSpeakGlanceWidget() }, "glance_refresh_sync")
+class GlanceEditAction : EditWidgetAction(WidgetConfigActivity::class.java)
+
+@Composable
+private fun FallbackWidget(message: String) {
+    Column(
+        modifier = GlanceModifier.fillMaxSize().padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "⚠",
+            style = TextStyle(
+                color = ColorProvider(Color.Red),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        )
+        Spacer(GlanceModifier.height(4.dp))
+        Text(
+            text = message,
+            style = TextStyle(
+                color = ColorProvider(Color.Gray),
+                fontSize = 10.sp
+            )
+        )
+    }
+}

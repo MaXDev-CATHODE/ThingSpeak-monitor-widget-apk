@@ -15,7 +15,6 @@ import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -35,20 +34,17 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
 
     override val glanceAppWidget: GlanceAppWidget = ThingSpeakGlanceWidget()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
-        android.util.Log.i("TS_DEBUG", "WidgetReceiver onUpdate: triggered for ids=${appWidgetIds.joinToString()}")
+        android.util.Log.i(WIDGET_LOG_TAG, "WidgetReceiver onUpdate: triggered for ids=${appWidgetIds.joinToString()}")
 
         // Ensure DataSyncWorker is running — schedule if not active (fix for widget-no-auto-refresh)
         enqueuePeriodicRefreshIfNeeded(context)
 
-        // FORCE SYNC ID FROM ROOM TO GLANCE (NUCLEAR V8)
-        // Note: Using a top-level coroutine scope for fire-and-forget sync to avoid blocking the receiver's main thread.
-        // However, we ensure the periodic refresh is enqueued correctly.
         appWidgetIds.forEach { id ->
-            scope.launch {
+            cleanupScope.launch {
                 try {
                     val boundId = repository.getBindingSync(id)
                     if (boundId > 0) {
@@ -58,16 +54,15 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
                                 p.toMutablePreferences().apply {
                                     if (this[WidgetPrefsKeys.KEY_CHANNEL_ID] != boundId) {
                                         this[WidgetPrefsKeys.KEY_CHANNEL_ID] = boundId
-                                        Log.i("TS_DEBUG", "PUSHED binding to Glance for standard $id -> $boundId")
+                                        Log.i(WIDGET_LOG_TAG, "PUSHED binding to Glance for standard $id -> $boundId")
                                     }
                                 }
                             }
-                            // Trigger immediate refresh for this specific widget if it's new/stale
                             ThingSpeakGlanceWidget().update(context, gId)
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("TS_DEBUG", "Failed to push binding for standard $id", e)
+                    Log.e(WIDGET_LOG_TAG, "Failed to push binding for standard $id", e)
                 }
             }
         }
@@ -75,43 +70,30 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        android.util.Log.v("TS_DEBUG", "WidgetReceiver onReceive: action=${intent.action}")
+        android.util.Log.v(WIDGET_LOG_TAG, "WidgetReceiver onReceive: action=${intent.action}")
     }
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         enqueuePeriodicRefresh(context)
-        Log.i(TAG, "First widget added — periodic refresh enqueued")
+        Log.i(WIDGET_LOG_TAG, "First widget added — periodic refresh enqueued")
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
-        android.util.Log.i("TS_DEBUG", "WidgetReceiver onDeleted: ids=${appWidgetIds.joinToString()}")
-        val manager = AppWidgetManager.getInstance(context)
+        android.util.Log.i(WIDGET_LOG_TAG, "WidgetReceiver onDeleted: ids=${appWidgetIds.joinToString()}")
 
-        // Check remaining active ThingSpeakGlanceWidget instances
-        val remainingGlanceWidgets = manager.getAppWidgetIds(
-            android.content.ComponentName(context, WidgetReceiver::class.java)
-        )
-        // Check remaining active ValueGridWidget instances
-        val remainingValueGridWidgets = manager.getAppWidgetIds(
-            android.content.ComponentName(context, ValueGridWidgetReceiver::class.java)
-        )
-
-        // Cancel periodic work only when no widgets of either type remain active
-        if (remainingGlanceWidgets.isEmpty() && remainingValueGridWidgets.isEmpty()) {
-            WorkManager.getInstance(context).cancelUniqueWork(com.thingspeak.monitor.core.worker.DataSyncWorker.WORK_NAME)
-            android.util.Log.w("TS_DEBUG", "WidgetReceiver: Last widget of any type removed — periodic refresh cancelled")
-        }
+        WidgetUpdateHelper.cancelRefreshIfNoWidgetsLeft(context)
 
         appWidgetIds.forEach { id ->
             cancelRefreshTimeout(id)
-            scope.launch {
+            cleanupScope.launch {
                 try {
                     repository.removeBinding(id)
-                    Log.i("TS_DEBUG", "WidgetReceiver: cleaned Room binding for $id")
+                    WidgetChartCache.clear(context, id)
+                    Log.i(WIDGET_LOG_TAG, "WidgetReceiver: cleaned Room binding and chart cache for $id")
                 } catch (e: Exception) {
-                    Log.e("TS_DEBUG", "WidgetReceiver: failed to clean Room binding for $id", e)
+                    Log.e(WIDGET_LOG_TAG, "WidgetReceiver: failed to clean Room binding and chart cache for $id", e)
                 }
             }
         }
@@ -119,11 +101,10 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        scope.cancel()
+        cleanupScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     }
 
     companion object {
-        private const val TAG = "TS_DEBUG"
         private val periodicScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun enqueuePeriodicRefresh(context: Context) {
@@ -134,7 +115,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
                 )
                 val intervalMinutes = entryPoint.appPreferences().observeSyncInterval().first()
                 com.thingspeak.monitor.core.worker.DataSyncWorker.schedule(context, intervalMinutes)
-                android.util.Log.i(TAG, "periodic refresh enqueued with interval=$intervalMinutes min")
+                android.util.Log.i(WIDGET_LOG_TAG, "periodic refresh enqueued with interval=$intervalMinutes min")
             }
         }
 
@@ -153,10 +134,10 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
                     it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
                 }
                 if (!isActive) {
-                    android.util.Log.i(TAG, "enqueuePeriodicRefreshIfNeeded: no active work found, scheduling")
+                    android.util.Log.i(WIDGET_LOG_TAG, "enqueuePeriodicRefreshIfNeeded: no active work found, scheduling")
                     enqueuePeriodicRefresh(context)
                 } else {
-                    android.util.Log.v(TAG, "enqueuePeriodicRefreshIfNeeded: worker already active, skipping")
+                    android.util.Log.v(WIDGET_LOG_TAG, "enqueuePeriodicRefreshIfNeeded: worker already active, skipping")
                 }
             }
         }

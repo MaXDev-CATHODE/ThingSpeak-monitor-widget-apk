@@ -7,7 +7,7 @@ import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.action.ActionParameters
 
-class RefreshWidgetAction(
+open class RefreshWidgetAction(
     private val widgetFactory: () -> GlanceAppWidget,
     private val uniqueWorkPrefix: String
 ) : ActionCallback {
@@ -25,7 +25,7 @@ class RefreshWidgetAction(
     }
 }
 
-class EditWidgetAction(
+open class EditWidgetAction(
     private val configActivityClass: Class<out android.app.Activity>
 ) : ActionCallback {
     override suspend fun onAction(
