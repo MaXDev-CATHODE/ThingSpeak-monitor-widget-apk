@@ -77,6 +77,7 @@ fun WidgetConfigScreen(
     initialVisibleFields: Set<Int>? = null,
     initialChartField: Int? = null,
     initialIsGlass: Boolean? = null,
+    initialBgColorMode: String? = null,
     initialChartTimespan: Int? = null,
     initialChartTimespanStr: String? = "1D",
     initialChartResults: Int? = 60,
@@ -85,7 +86,7 @@ fun WidgetConfigScreen(
     availableChannels: List<com.thingspeak.monitor.core.datastore.SavedChannel> = emptyList(),
     onRefreshRequest: ((Long, String) -> Unit)? = null,
     initialAlertRules: List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule> = emptyList(),
-    onSave: (channelId: Long, apiKey: String, channelName: String, bgColor: String?, textColor: String?, transparency: Float, fontSize: Int, visibleFields: Set<Int>, chartField: Int, isGlass: Boolean, chartTimespan: Int, chartTimespanStr: String, chartResults: Int, alertRules: List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>) -> Unit,
+    onSave: (channelId: Long, apiKey: String, channelName: String, bgColor: String?, textColor: String?, transparency: Float, fontSize: Int, visibleFields: Set<Int>, chartField: Int, isGlass: Boolean, bgColorMode: String?, chartTimespan: Int, chartTimespanStr: String, chartResults: Int, alertRules: List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>) -> Unit,
 ) {
     var channelIdText by remember { mutableStateOf(initialChannelId?.toString() ?: "") }
     var apiKey by remember { mutableStateOf(initialApiKey ?: "") }
@@ -112,6 +113,7 @@ fun WidgetConfigScreen(
     var transparency by remember { mutableStateOf(initialTransparency ?: 1.0f) }
     var fontSize by remember { mutableStateOf(initialFontSize?.toFloat() ?: 12f) }
     var isGlass by remember { mutableStateOf(initialIsGlass ?: false) }
+    var bgColorMode by remember { mutableStateOf(initialBgColorMode ?: WidgetPrefsKeys.COLOR_MODE_CUSTOM) }
     var chartTimespan by remember { mutableStateOf(initialChartTimespan?.toFloat() ?: 24f) }
     var chartTimespanStr by remember { mutableStateOf(initialChartTimespanStr ?: "1D") }
     var chartResults by remember { mutableStateOf(initialChartResults?.toFloat() ?: 60f) }
@@ -450,6 +452,18 @@ fun WidgetConfigScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(stringResource(R.string.widget_glassmorphism), style = MaterialTheme.typography.bodyMedium, color = textColor)
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Switch(
+                    checked = bgColorMode == WidgetPrefsKeys.COLOR_MODE_SYSTEM,
+                    onCheckedChange = { enabled ->
+                        bgColorMode = if (enabled) WidgetPrefsKeys.COLOR_MODE_SYSTEM else WidgetPrefsKeys.COLOR_MODE_CUSTOM
+                    }
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(stringResource(R.string.widget_system_colors), style = MaterialTheme.typography.bodyMedium, color = textColor)
+            }
         }
             
         Spacer(modifier = Modifier.height(16.dp))
@@ -589,6 +603,7 @@ fun WidgetConfigScreen(
                             visibleFields,
                             chartField,
                             isGlass,
+                            bgColorMode,
                             chartTimespan.toInt(),
                             chartTimespanStr,
                             chartResults.toInt(),
@@ -653,6 +668,6 @@ fun WidgetConfigScreen(
 @Composable
 private fun WidgetConfigScreenPreview() {
     MaterialTheme {
-        WidgetConfigScreen(onSave = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> })
+        WidgetConfigScreen(onSave = { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> })
     }
 }

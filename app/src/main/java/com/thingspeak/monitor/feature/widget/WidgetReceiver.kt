@@ -102,7 +102,7 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         Log.i(WIDGET_LOG_TAG, "WidgetReceiver onDisabled: last widget removed, cleaning orphaned bindings")
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+        cleanupScope.launch {
             try {
                 repository.clearAllBindings()
                 WidgetChartCache.clearAll(context)

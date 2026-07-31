@@ -48,7 +48,7 @@ private fun ValueGridContentImpl(context: Context, data: WidgetData) {
     val bgColor = if (data.isGlass) {
         ColorProvider(Color.White.copy(alpha = 0.12f))
     } else {
-        ColorProvider(Color(baseColor))
+        ColorProvider(Color(baseColor).copy(alpha = data.transparency))
     }
 
     Column(

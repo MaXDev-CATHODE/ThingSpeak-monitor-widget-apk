@@ -87,6 +87,7 @@
     <string name="widget_field_name">Field %1$d</string>
     <string name="widget_working_offline">Working Offline — Some data may be stale</string>
     <string name="widget_glassmorphism">Glassmorphism Effect</string>
+    <string name="widget_system_colors">Use system colors</string>
     
     <!-- Chart UI Extras -->
     <string name="chart_back">Back</string>

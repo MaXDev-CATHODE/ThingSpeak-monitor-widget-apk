@@ -59,6 +59,7 @@ class WidgetConfigActivity : ComponentActivity() {
             val savedTransparency = prefs?.get(WidgetPrefsKeys.KEY_TRANSPARENCY)
             val savedFontSize = prefs?.get(WidgetPrefsKeys.KEY_FONT_SIZE)
             val savedIsGlass = prefs?.get(WidgetPrefsKeys.KEY_IS_GLASS)
+            val savedBgColorMode = prefs?.get(WidgetPrefsKeys.KEY_BG_COLOR_MODE)
             val savedVisibleFields = prefs?.get(WidgetPrefsKeys.KEY_VISIBLE_FIELDS)?.mapNotNull { it.toIntOrNull() }?.toSet()
             
             var initialChannels = channelPreferences.observe().first()
@@ -81,6 +82,7 @@ class WidgetConfigActivity : ComponentActivity() {
                         initialBgColorHex = savedBgColor ?: existing?.widgetBgColorHex,
                         initialTransparency = savedTransparency ?: existing?.widgetTransparency ?: 1.0f,
                         initialIsGlass = savedIsGlass ?: existing?.isGlassmorphismEnabled,
+                        initialBgColorMode = savedBgColorMode,
                         initialChartTimespan = existing?.chartProcessingPeriod,
                         initialChartTimespanStr = existing?.chartTimespan,
                         initialChartResults = existing?.chartResults ?: 60,
@@ -102,10 +104,10 @@ class WidgetConfigActivity : ComponentActivity() {
                                 } 
                             }
                         },
-                        onSave = { chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResults, alertRules ->
+                        onSave = { chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, colorMode, chartTimespan, chartTimespanStr, chResults, alertRules ->
                             if (!saveGuard.compareAndSet(false, true)) return@WidgetConfigScreen
                             isSaving = true
-                            onChannelSaved(appWidgetId, chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResults, alertRules)
+                            onChannelSaved(appWidgetId, chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, colorMode, chartTimespan, chartTimespanStr, chResults, alertRules)
                         },
                     )
                 }
@@ -125,6 +127,7 @@ class WidgetConfigActivity : ComponentActivity() {
         widgetVisibleFields: Set<Int>,
         chartField: Int,
         isGlass: Boolean,
+        bgColorMode: String?,
         chartTimespan: Int,
         chartTimespanStr: String,
         chartResultsCount: Int,
@@ -162,6 +165,7 @@ class WidgetConfigActivity : ComponentActivity() {
                             this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chartResultsCount
                             this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = widgetVisibleFields.map { it.toString() }.toSet()
                             this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
+                            this[WidgetPrefsKeys.KEY_BG_COLOR_MODE] = bgColorMode ?: WidgetPrefsKeys.COLOR_MODE_CUSTOM
                             this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
                             this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
                             // Clear stale chart bitmap so widget shows "Loading Chart..." until

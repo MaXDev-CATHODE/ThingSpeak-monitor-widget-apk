@@ -94,6 +94,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                     val savedTransparency = initialPrefs?.get(WidgetPrefsKeys.KEY_TRANSPARENCY)
                     val savedFontSize = initialPrefs?.get(WidgetPrefsKeys.KEY_FONT_SIZE)
                     val savedIsGlass = initialPrefs?.get(WidgetPrefsKeys.KEY_IS_GLASS)
+                    val savedBgColorMode = initialPrefs?.get(WidgetPrefsKeys.KEY_BG_COLOR_MODE)
                     val savedVisibleFields = initialPrefs?.get(WidgetPrefsKeys.KEY_VISIBLE_FIELDS)?.mapNotNull { it.toIntOrNull() }?.toSet()
 
                     val existing = savedChannelId?.let { idVal -> savedChannels.find { it.id == idVal } }
@@ -129,6 +130,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                         initialBgColorHex = savedBgColor ?: existing?.widgetBgColorHex,
                         initialTransparency = savedTransparency ?: existing?.widgetTransparency ?: 1.0f,
                         initialIsGlass = savedIsGlass ?: existing?.isGlassmorphismEnabled,
+                        initialBgColorMode = savedBgColorMode,
                         initialChartTimespan = existing?.chartProcessingPeriod,
                         initialChartTimespanStr = existing?.chartTimespan,
                         initialChartResults = existing?.chartResults ?: 60,
@@ -136,7 +138,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                         initialTextColorHex = savedTextColor ?: existing?.widgetTextColorHex,
                         initialVisibleFields = savedVisibleFields ?: existing?.widgetVisibleFields ?: emptySet(),
                         initialAlertRules = initialAlertRules,
-                        onSave = { channelId, apiKey, name, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, chartTimespan, chartTimespanStr, chResultsCount, alertRules ->
+                        onSave = { channelId, apiKey, name, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, colorMode, chartTimespan, chartTimespanStr, chResultsCount, alertRules ->
                             if (!saveGuard.compareAndSet(false, true)) return@WidgetConfigScreen
                             isSaving = true
                             coroutineScope.launch {
@@ -175,6 +177,7 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                                                     this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chResultsCount
                                                     this[WidgetPrefsKeys.KEY_IS_REFRESHING] = true
                                                     this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
+                                                    this[WidgetPrefsKeys.KEY_BG_COLOR_MODE] = colorMode ?: WidgetPrefsKeys.COLOR_MODE_CUSTOM
                                                     this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
                                                 }
                                             }

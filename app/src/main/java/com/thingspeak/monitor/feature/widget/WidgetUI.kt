@@ -94,13 +94,7 @@ private fun WidgetUIContent(data: WidgetData) {
     val bgColor = if (data.isGlass) {
         Color.White.copy(alpha = 0.12f)
     } else {
-        try {
-            val hex = (effectiveBgHex?.removePrefix("#") ?: "FFFFFF")
-            val alpha = (data.transparency * 255).toInt().toString(16).padStart(2, '0')
-            Color(android.graphics.Color.parseColor("#$alpha$hex"))
-        } catch (e: Exception) {
-            Color.White.copy(alpha = data.transparency)
-        }
+        Color(baseColor).copy(alpha = data.transparency)
     }
 
     val isDarkBg = try {
@@ -310,29 +304,3 @@ private fun WidgetUIContent(data: WidgetData) {
 
 class GlanceRefreshAction : RefreshWidgetAction({ ThingSpeakGlanceWidget() }, "glance_refresh_sync")
 class GlanceEditAction : EditWidgetAction(WidgetConfigActivity::class.java)
-
-@Composable
-private fun FallbackWidget(message: String) {
-    Column(
-        modifier = GlanceModifier.fillMaxSize().padding(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "⚠",
-            style = TextStyle(
-                color = ColorProvider(Color.Red),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-        )
-        Spacer(GlanceModifier.height(4.dp))
-        Text(
-            text = message,
-            style = TextStyle(
-                color = ColorProvider(Color.Gray),
-                fontSize = 10.sp
-            )
-        )
-    }
-}

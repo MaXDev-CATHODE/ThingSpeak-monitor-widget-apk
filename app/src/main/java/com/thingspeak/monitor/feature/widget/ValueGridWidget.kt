@@ -114,7 +114,7 @@ class ValueGridWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         android.util.Log.i(WIDGET_LOG_TAG, "ValueGridWidgetReceiver onDisabled: last grid removed, cleaning orphaned bindings")
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+        updateScope.launch {
             try {
                 repository.clearAllBindings()
                 WidgetChartCache.clearAll(context)
