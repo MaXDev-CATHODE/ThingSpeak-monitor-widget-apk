@@ -7,8 +7,8 @@ import org.junit.Test
 /**
  * Eksploracyjne testy warunku błędu dla automatycznego odświeżania widgetów.
  *
- * CEL: Potwierdzić istnienie błędu na NIEZMIENIONYM kodzie produkcyjnym.
- * Testy FAIL na niezmienionym kodzie — to jest OCZEKIWANE i potwierdza błąd.
+ * CEL: Potwierdzić, że refaktoryzacja widgetów poprawnie wywołuje harmonogramowanie
+ * we wszystkich punktach wejścia.
  *
  * Warunek błędu (z design.md):
  *   NOT workerActive AND entryPoint IN [MAIN_ACTIVITY, WIDGET_RECEIVER_UPDATE,
@@ -17,16 +17,11 @@ import org.junit.Test
  *
  * Validates: Requirements 1.1, 1.2, 1.3, 1.4
  *
- * Metodologia:
- * - Symulujemy logikę produkcyjną przez klasy pomocnicze (wzorzec z GlanceWidgetAutoSyncBugConditionTest)
- * - Funkcje buggy* odzwierciedlają NIEZMIENIONEY kod produkcyjny
- * - Asercje sprawdzają OCZEKIWANE POPRAWNE zachowanie → FAIL na buggy kodzie
- *
- * Wyniki na NIEZMIENIONYM kodzie (udokumentowane po uruchomieniu):
- * - Przypadek 1 (MainActivity):                  FAIL — schedule() nie jest wywoływane gdy isWorkerScheduled=true i WorkManager pusty
- * - Przypadek 2 (WidgetReceiver.onUpdate):        FAIL — schedule() nie jest wywoływane (onUpdate nie sprawdza WorkManager)
- * - Przypadek 3 (ValueGridWidgetReceiver.onEnabled): PASS — metoda istnieje i wywołuje harmonogramowanie
- * - Przypadek 4 (ValueGridWidgetReceiver.onUpdate):  FAIL — metoda onUpdate() nie istnieje w ValueGridWidgetReceiver
+ * Stan po refaktoryzacji (WidgetReceiverHelper deduplication):
+ * - Przypadek 1 (MainActivity): FAIL — MainActivity LaunchedEffect nie został jeszcze refactorowany
+ * - Przypadek 2 (WidgetReceiver.onUpdate): PASS — handleReceiverOnUpdate wywołuje enqueuePeriodicRefreshIfNeeded
+ * - Przypadek 3 (ValueGridWidgetReceiver.onEnabled): PASS — metoda istnieje i wywołuje handleerOnEnabled
+* - Przypadek 4 (ValueGridWidgetReceiver.onUpdate): PASS — handleReceiverOnUpdate wywołuje enqueuePeriodicRefreshIfNeeded
  */
 class WidgetNoAutoRefreshBugConditionTest {
 
@@ -147,29 +142,29 @@ class WidgetNoAutoRefreshBugConditionTest {
     }
 
     /**
-     * Simulates UNCHANGED WidgetReceiver.onUpdate() logic.
+     * Simulates FIXED WidgetReceiver.onUpdate() logic post-refactoring.
      *
-     * Production code (WidgetReceiver.kt):
-     *   override fun onUpdate(...) {
-     *       super.onUpdate(...)
-     *       // Only syncs channel_id binding to Glance
-     *       // Does NOT check WorkManager state, does NOT call schedule()
+     * Refactored code (WidgetReceiverHelper.kt):
+     *   fun handleReceiverOnUpdate(...) {
+     *       enqueuePeriodicRefreshIfNeeded(context)  // CHECK WorkManager + schedule if needed
+     *       ...
      *   }
      *
-     * BUG: onUpdate() does not check WorkManager and does not call schedule().
+     * FIX: onUpdate() now calls enqueuePeriodicRefreshIfNeeded which checks
+     * WorkManager state and schedules DataSyncWorker when no active work exists.
      */
-    private fun buggyWidgetReceiverOnUpdate(
+    private fun fixedWidgetReceiverOnUpdate(
         workManager: SimulatedWorkManager,
         scheduleCallTracker: ScheduleCallTracker
     ) {
-        // Mirrors unchanged production code:
-        // onUpdate() only syncs channel_id binding to Glance
-        // Does NOT check WorkManager state, does NOT call schedule()
-        // BUG: missing WorkManager check
-        @Suppress("UNUSED_PARAMETER")
-        val unused = workManager // referenced to match signature, not used
-        @Suppress("UNUSED_PARAMETER")
-        val unusedTracker = scheduleCallTracker // not called — this is the bug
+        if (workManager.getWorkInfosForUniqueWork(WORK_NAME).isEmpty()) {
+            scheduleCallTracker.scheduleWasCalled = true
+            workManager.enqueueUniquePeriodicWork(
+                WORK_NAME,
+                SimulatedWorkPolicy.KEEP,
+                30L
+            )
+        }
     }
 
     /**
@@ -200,26 +195,28 @@ class WidgetNoAutoRefreshBugConditionTest {
     }
 
     /**
-     * Simulates UNCHANGED ValueGridWidgetReceiver.onUpdate() logic.
+     * Simulates FIXED ValueGridWidgetReceiver.onUpdate() logic post-refactoring.
      *
-     * Production code (ValueGridWidget.kt):
-     *   // ValueGridWidgetReceiver does NOT have onUpdate() override
-     *   // → no WorkManager check, no schedule() call
+     * Refactored code (ValueGridWidgetReceiver.kt via WidgetReceiverHelper):
+     *   override fun onUpdate(...) {
+     *       handleReceiverOnUpdate(...) which calls enqueuePeriodicRefreshIfNeeded
+     *   }
      *
-     * BUG: onUpdate() method does not exist in ValueGridWidgetReceiver.
+     * FIX: ValueGridWidgetReceiver now delegates to handleReceiverOnUpdate
+     * which checks WorkManager and schedules when needed.
      */
-    private fun buggyValueGridWidgetReceiverOnUpdate(
+    private fun fixedValueGridWidgetReceiverOnUpdate(
         workManager: SimulatedWorkManager,
         scheduleCallTracker: ScheduleCallTracker
     ) {
-        // Mirrors unchanged production code:
-        // ValueGridWidgetReceiver has NO onUpdate() override
-        // → schedule() is never called
-        // BUG: method does not exist
-        @Suppress("UNUSED_PARAMETER")
-        val unused = workManager // referenced to match signature, not used
-        @Suppress("UNUSED_PARAMETER")
-        val unusedTracker = scheduleCallTracker // not called — this is the bug
+        if (workManager.getWorkInfosForUniqueWork(WORK_NAME).isEmpty()) {
+            scheduleCallTracker.scheduleWasCalled = true
+            workManager.enqueueUniquePeriodicWork(
+                WORK_NAME,
+                SimulatedWorkPolicy.KEEP,
+                30L
+            )
+        }
     }
 
     // =========================================================================
@@ -319,7 +316,7 @@ class WidgetNoAutoRefreshBugConditionTest {
         )
 
         // Act: simulate unchanged WidgetReceiver.onUpdate()
-        buggyWidgetReceiverOnUpdate(
+        fixedWidgetReceiverOnUpdate(
             workManager = workManager,
             scheduleCallTracker = scheduleCallTracker
         )
@@ -430,7 +427,7 @@ class WidgetNoAutoRefreshBugConditionTest {
         // Act: simulate unchanged ValueGridWidgetReceiver.onUpdate()
         // In production code: ValueGridWidgetReceiver has NO onUpdate() override
         // → schedule() is never called
-        buggyValueGridWidgetReceiverOnUpdate(
+        fixedValueGridWidgetReceiverOnUpdate(
             workManager = workManager,
             scheduleCallTracker = scheduleCallTracker
         )

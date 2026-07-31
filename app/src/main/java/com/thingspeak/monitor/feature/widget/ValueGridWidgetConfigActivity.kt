@@ -16,12 +16,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.glance.appwidget.state.updateAppWidgetState
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
 import com.thingspeak.monitor.core.designsystem.theme.ThingSpeakMonitorTheme
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
 import dagger.hilt.android.AndroidEntryPoint
-import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -44,23 +42,15 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val intent = intent
         val extras = intent.extras
         if (extras != null) {
-            appWidgetId = extras.getInt(
-                AppWidgetManager.EXTRA_APPWIDGET_ID,
-                AppWidgetManager.INVALID_APPWIDGET_ID
-            )
-            android.util.Log.d(WIDGET_LOG_TAG, "Activity started with appWidgetId=$appWidgetId")
+            appWidgetId = extras.getInt(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
         }
 
-        val resultValue = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        setResult(RESULT_CANCELED, resultValue)
+        setResult(RESULT_CANCELED, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId))
+        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return }
 
-        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
-            finish()
-            return
-        }
+        val widgetClasses = listOf(ValueGridWidget::class.java)
 
         setContent {
             ThingSpeakMonitorTheme {
@@ -72,24 +62,22 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                     var isSaving by remember { mutableStateOf(false) }
                     val coroutineScope = rememberCoroutineScope()
 
-                    var initialPrefs by remember { mutableStateOf<androidx.datastore.preferences.core.Preferences?>(null) }
+                    var savedPrefs by remember { mutableStateOf<SavedWidgetPrefs?>(null) }
                     LaunchedEffect(appWidgetId) {
-                        val gId = findWidgetGlanceId(this@ValueGridWidgetConfigActivity, appWidgetId, widgetClasses = listOf(ValueGridWidget::class.java))
-                        if (gId != null) {
-                            initialPrefs = androidx.glance.appwidget.state.getAppWidgetState(
-                                this@ValueGridWidgetConfigActivity, WidgetPreferencesStateDefinition, gId
-                            )
-                        }
+                        savedPrefs = loadSavedWidgetPrefs(
+                            this@ValueGridWidgetConfigActivity, appWidgetId,
+                            widgetClasses = widgetClasses
+                        )
                     }
 
-                    val savedChannelId = initialPrefs?.get(WidgetPrefsKeys.KEY_CHANNEL_ID)
-                    val savedBgColor = initialPrefs?.get(WidgetPrefsKeys.KEY_BG_COLOR)
-                    val savedTextColor = initialPrefs?.get(WidgetPrefsKeys.KEY_TEXT_COLOR)
-                    val savedTransparency = initialPrefs?.get(WidgetPrefsKeys.KEY_TRANSPARENCY)
-                    val savedFontSize = initialPrefs?.get(WidgetPrefsKeys.KEY_FONT_SIZE)
-                    val savedIsGlass = initialPrefs?.get(WidgetPrefsKeys.KEY_IS_GLASS)
-                    val savedBgColorMode = initialPrefs?.get(WidgetPrefsKeys.KEY_BG_COLOR_MODE)
-                    val savedVisibleFields = initialPrefs?.get(WidgetPrefsKeys.KEY_VISIBLE_FIELDS)?.mapNotNull { it.toIntOrNull() }?.toSet()
+                    val savedChannelId = savedPrefs?.channelId
+                    val savedBgColor = savedPrefs?.bgColor
+                    val savedTextColor = savedPrefs?.textColor
+                    val savedTransparency = savedPrefs?.transparency
+                    val savedFontSize = savedPrefs?.fontSize
+                    val savedIsGlass = savedPrefs?.isGlass
+                    val savedBgColorMode = savedPrefs?.bgColorMode
+                    val savedVisibleFields = savedPrefs?.visibleFields
 
                     val existing = savedChannelId?.let { idVal -> savedChannels.find { it.id == idVal } }
 
@@ -132,77 +120,44 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                         initialTextColorHex = savedTextColor ?: existing?.widgetTextColorHex,
                         initialVisibleFields = savedVisibleFields ?: existing?.widgetVisibleFields ?: emptySet(),
                         initialAlertRules = initialAlertRules,
-                        onSave = { channelId, apiKey, name, bgColor, txtColor, transparency, fontSize, visibleFields, chartField, isGlass, colorMode, chartTimespan, chartTimespanStr, chResultsCount, alertRules ->
+                        onSave = { channelId, apiKey, name, bgColor, txtColor, transparency, fontSize, visibleFields, _, isGlass, colorMode, _, _, chResultsCount, alertRules ->
                             if (!saveGuard.compareAndSet(false, true)) return@WidgetConfigScreen
                             isSaving = true
                             coroutineScope.launch {
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                                     try {
-                                        android.util.Log.d(WIDGET_LOG_TAG, "onSave triggered for channel $channelId, widget $appWidgetId")
-
-                                        val entryPoint = EntryPointAccessors.fromApplication(
-                                            applicationContext, com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
-                                        )
-                                        WidgetUpdateHelper.saveWidgetCoreConfig(
-                                            entryPoint = entryPoint,
+                                        val gId = findWidgetGlanceId(applicationContext, appWidgetId, widgetClasses = widgetClasses)
+                                        saveWidgetConfigAndRefresh(
+                                            context = applicationContext,
+                                            appWidgetId = appWidgetId,
+                                            glanceId = gId,
+                                            channelId = channelId,
+                                            channelName = name,
+                                            apiKey = apiKey,
+                                            bgColor = bgColor,
+                                            textColor = txtColor,
+                                            transparency = transparency,
+                                            fontSize = fontSize,
+                                            visibleFields = visibleFields,
+                                            isGlass = isGlass,
+                                            bgColorMode = colorMode,
+                                            chartResultsCount = chResultsCount,
+                                            alertRules = alertRules,
+                                            skipChartClear = true,
                                             channelPreferences = channelPreferences,
                                             widgetBindingRepository = widgetBindingRepository,
-                                            appWidgetId = appWidgetId,
-                                            channelId = channelId,
-                                            apiKey = apiKey,
-                                            channelName = name,
-                                            alertRules = alertRules
-                                        )
-
-                                        val appContext = applicationContext
-
-                                        val gId = findWidgetGlanceId(appContext, appWidgetId, widgetClasses = listOf(ValueGridWidget::class.java))
-                                        if (gId != null) {
-                                            updateAppWidgetState(appContext, WidgetPreferencesStateDefinition, gId) { p ->
-                                                p.toMutablePreferences().apply {
-                                                    this[WidgetPrefsKeys.KEY_CHANNEL_ID] = channelId
-                                                    this[WidgetPrefsKeys.KEY_CHANNEL_NAME] = name
-                                                    this[WidgetPrefsKeys.KEY_BG_COLOR] = bgColor ?: "#FFFFFF"
-                                                    this[WidgetPrefsKeys.KEY_TEXT_COLOR] = txtColor ?: ""
-                                                    this[WidgetPrefsKeys.KEY_TRANSPARENCY] = transparency
-                                                    this[WidgetPrefsKeys.KEY_FONT_SIZE] = fontSize
-                                                    this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = visibleFields.map { it.toString() }.toSet()
-                                                    this[WidgetPrefsKeys.KEY_IS_GLASS] = isGlass
-                                                    this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chResultsCount
-                                                    this[WidgetPrefsKeys.KEY_IS_REFRESHING] = true
-                                                    this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
-                                                    this[WidgetPrefsKeys.KEY_BG_COLOR_MODE] = colorMode ?: WidgetPrefsKeys.COLOR_MODE_CUSTOM
-                                                    this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
-                                                    this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
+                                            updateWidget = { ValueGridWidget().update(applicationContext, gId!!) },
+                                            onResult = {
+                                                val resultIntent = Intent().apply {
+                                                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                                                 }
+                                                setResult(RESULT_OK, resultIntent)
+                                                finish()
                                             }
-                                            android.util.Log.d(WIDGET_LOG_TAG, "DataStore updated for grid $appWidgetId")
-
-                                            // Trigger refresh with 60s timeout protection via performWidgetRefreshAction
-                                            // Replaces raw WorkManager enqueue to prevent isRefreshing stuck at true
-                                            performWidgetRefreshAction(
-                                                context = appContext,
-                                                glanceId = gId,
-                                                updateWidget = suspend { ValueGridWidget().update(appContext, gId) },
-                                                uniqueWorkPrefix = "config_refresh"
-                                            )
-                                            android.util.Log.d(WIDGET_LOG_TAG, "Refresh action enqueued for $appWidgetId.")
-                                        }
-
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                            val resultIntent = Intent().apply {
-                                                putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                                            }
-                                            setResult(RESULT_OK, resultIntent)
-                                            android.util.Log.d(WIDGET_LOG_TAG, ">>> RESULT_OK sent. Finishing.")
-                                            finish()
-                                        }
-
+                                        )
                                     } catch (e: Exception) {
                                         android.util.Log.e(WIDGET_LOG_TAG, "FATAL onSave error", e)
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                            finish()
-                                        }
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { finish() }
                                     }
                                 }
                             }
@@ -211,9 +166,5 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
     }
 }
