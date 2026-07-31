@@ -333,14 +333,11 @@ object WidgetUpdateHelper {
         )
         val bindingRepo = entryPoint.widgetBindingRepository()
 
-        for (widgetClass in listOf(
-            ThingSpeakGlanceWidget::class.java,
-            ValueGridWidget::class.java
-        )) {
+        for (widgetClass in WidgetRegistry.ALL_CLASSES) {
             manager.getGlanceIds(widgetClass).forEach { glanceId ->
                 val appWidgetId = manager.getAppWidgetId(glanceId)
                 if (bindingRepo.getBindingSync(appWidgetId) == channel.id) {
-                    val chartFile = if (widgetClass == ThingSpeakGlanceWidget::class.java && feedEntries != null && feedEntries.isNotEmpty()) {
+                    val chartFile = if (WidgetRegistry.isChartWidget(widgetClass) && feedEntries != null && feedEntries.isNotEmpty()) {
                         WidgetChartGenerator.generateAndSaveChart(
                             context = context,
                             channel = channel,
@@ -359,12 +356,9 @@ object WidgetUpdateHelper {
                         violatedMaxFields = violatedMaxFields,
                         minSetFields = minSetFields,
                         maxSetFields = maxSetFields,
-                        skipChartPrefs = widgetClass != ThingSpeakGlanceWidget::class.java
+                        skipChartPrefs = !WidgetRegistry.isChartWidget(widgetClass)
                     )
-                    when (widgetClass) {
-                        ThingSpeakGlanceWidget::class.java -> ThingSpeakGlanceWidget().update(context, glanceId)
-                        ValueGridWidget::class.java -> ValueGridWidget().update(context, glanceId)
-                    }
+                    WidgetRegistry.create(widgetClass).update(context, glanceId)
                 }
             }
         }

@@ -12,10 +12,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-private val periodicScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
 fun enqueuePeriodicRefresh(context: Context) {
-    periodicScope.launch {
+    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
         val entryPoint = EntryPointAccessors.fromApplication(
             context.applicationContext,
             com.thingspeak.monitor.core.di.WidgetEntryPoint::class.java
@@ -26,8 +24,14 @@ fun enqueuePeriodicRefresh(context: Context) {
     }
 }
 
+/**
+ * Enqueues periodic refresh only if DataSyncWorker is not already active.
+ * Checks the real WorkManager state before scheduling.
+ * Each call creates its own scope — short-lived, fire-and-forget launch
+ * is safe here; no shared state is mutated.
+ */
 fun enqueuePeriodicRefreshIfNeeded(context: Context) {
-    periodicScope.launch {
+    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
         val workInfos = WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork(com.thingspeak.monitor.core.worker.DataSyncWorker.WORK_NAME)
             .get()

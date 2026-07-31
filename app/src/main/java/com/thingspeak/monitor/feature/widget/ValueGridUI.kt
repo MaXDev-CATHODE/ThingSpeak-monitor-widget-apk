@@ -170,8 +170,7 @@ private fun ValueGridContentImpl(context: Context, data: WidgetData) {
             } else {
                 // Default to first 4 non-empty fields if no visible fields configured (null)
                 (1..8).filter { i -> 
-                    data.fieldNames[i]?.isNotBlank() == true || 
-                    (i == 1 && data.entry?.field1 != null) // Always show field 1 if possible
+                    data.fieldNames[i]?.isNotBlank() == true
                 }.take(4)
             }
 

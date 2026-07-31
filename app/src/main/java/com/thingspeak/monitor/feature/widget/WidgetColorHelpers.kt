@@ -28,24 +28,14 @@ fun darkModeAutoBgColor(data: WidgetData, context: Context): String? {
 fun resolveSystemAwareBackground(
     prefHex: String?,
     isDarkMode: Boolean,
-    context: Context,
+    @Suppress("UNUSED_PARAMETER") context: Context,
     colorMode: String? = WidgetPrefsKeys.COLOR_MODE_CUSTOM
 ): Int {
     if (colorMode == WidgetPrefsKeys.COLOR_MODE_SYSTEM) {
-        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            try {
-                val accentRes = if (isDarkMode)
-                    android.R.color.system_accent1_200
-                else
-                    android.R.color.system_accent1_500
-                context.resources.getColor(accentRes, context.theme)
-            } catch (_: Exception) {
-                if (isDarkMode) android.graphics.Color.parseColor("#212121")
-                else android.graphics.Color.parseColor("#FFFFFF")
-            }
+        return if (isDarkMode) {
+            android.graphics.Color.parseColor("#212121")
         } else {
-            if (isDarkMode) android.graphics.Color.parseColor("#212121")
-            else android.graphics.Color.parseColor("#FFFFFF")
+            android.graphics.Color.parseColor("#FFFFFF")
         }
     }
     return try {

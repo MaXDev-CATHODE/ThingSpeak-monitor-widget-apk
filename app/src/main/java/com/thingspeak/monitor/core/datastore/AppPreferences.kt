@@ -39,7 +39,6 @@ class AppPreferences @Inject constructor(
     private val chartSmoothingKey = androidx.datastore.preferences.core.booleanPreferencesKey("is_chart_smoothing_enabled")
     private val chartFilterKey = androidx.datastore.preferences.core.stringPreferencesKey("last_chart_filter")
     private val chartMergingKey = androidx.datastore.preferences.core.booleanPreferencesKey("is_chart_merging_enabled")
-    private val isWorkerScheduledKey = androidx.datastore.preferences.core.booleanPreferencesKey("is_worker_scheduled")
     private val isHighFrequencyEnabledKey = androidx.datastore.preferences.core.booleanPreferencesKey("is_high_frequency_enabled")
     private val highFrequencyIntervalKey = androidx.datastore.preferences.core.longPreferencesKey("high_frequency_interval_minutes")
 
@@ -139,15 +138,6 @@ class AppPreferences @Inject constructor(
     /** Sets the chart merging state. */
     suspend fun setChartMerging(enabled: Boolean) {
         dataStore.edit { it[chartMergingKey] = enabled }
-    }
-
-    /** Observes if the background worker has been scheduled. */
-    fun observeIsWorkerScheduled(): Flow<Boolean> =
-        dataStore.data.map { it[isWorkerScheduledKey] ?: false }.distinctUntilChanged()
-
-    /** Sets the background worker scheduled state. */
-    suspend fun setIsWorkerScheduled(scheduled: Boolean) {
-        dataStore.edit { it[isWorkerScheduledKey] = scheduled }
     }
 
     /** Observes if high-frequency monitoring is enabled. */

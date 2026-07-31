@@ -86,7 +86,6 @@ class SettingsViewModel @Inject constructor(
             com.thingspeak.monitor.core.worker.DataSyncWorker.runOnce(context)
             // Then reschedule the periodic worker with the new interval (UPDATE resets the timer).
             com.thingspeak.monitor.core.worker.DataSyncWorker.scheduleWithUpdate(context, minutes)
-            appPreferences.setIsWorkerScheduled(true)
         }
     }
 

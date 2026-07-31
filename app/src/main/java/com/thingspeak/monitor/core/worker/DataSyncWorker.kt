@@ -8,7 +8,6 @@ import androidx.work.*
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
 import com.thingspeak.monitor.core.notifications.AlertManager
 import com.thingspeak.monitor.feature.channel.domain.repository.ChannelRepository
-import com.thingspeak.monitor.feature.widget.ThingSpeakGlanceWidget
 import com.thingspeak.monitor.feature.channel.domain.model.toSavedChannel
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -107,10 +106,7 @@ class DataSyncWorker @AssistedInject constructor(
             )
             val bindingRepo = entryPoint.widgetBindingRepository()
 
-            for (widgetClass in listOf(
-                ThingSpeakGlanceWidget::class.java,
-                com.thingspeak.monitor.feature.widget.ValueGridWidget::class.java
-            )) {
+            for (widgetClass in com.thingspeak.monitor.feature.widget.WidgetRegistry.ALL_CLASSES) {
                 manager.getGlanceIds(widgetClass).forEach { id ->
                     val appWidgetId = manager.getAppWidgetId(id)
                     if (bindingRepo.getBindingSync(appWidgetId) != -1L) {

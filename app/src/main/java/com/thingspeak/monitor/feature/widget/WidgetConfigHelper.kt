@@ -111,6 +111,11 @@ suspend fun saveWidgetConfigAndRefresh(
             updateWidget = updateWidget,
             uniqueWorkPrefix = "config_refresh"
         )
+    } else {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            onResult()
+        }
+        return
     }
 
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {

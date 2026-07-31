@@ -58,14 +58,13 @@ class SyncIntervalChangeBugConditionTest {
     }
 
     /**
-     * Simulates FIXED setSyncInterval() from SettingsViewModel.kt (AFTER fix).
+     * Simulates FIXED setSyncInterval() from SettingsViewModel.kt.
      *
-     * Fixed production code (SettingsViewModel.kt):
+     * Production code (SettingsViewModel.kt):
      *   fun setSyncInterval(context, minutes) {
      *       appPreferences.setSyncInterval(minutes)
-     *       DataSyncWorker.runOnce(context)           // ← ADDED: immediate sync
+     *       DataSyncWorker.runOnce(context)           // immediate sync
      *       DataSyncWorker.scheduleWithUpdate(context, minutes)
-     *       appPreferences.setIsWorkerScheduled(true)
      *   }
      */
     private fun fixedSetSyncInterval(

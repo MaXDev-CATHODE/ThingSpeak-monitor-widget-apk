@@ -17,11 +17,11 @@ import org.junit.Test
  *
  * Validates: Requirements 1.1, 1.2, 1.3, 1.4
  *
- * Stan po refaktoryzacji (WidgetReceiverHelper deduplication):
- * - Przypadek 1 (MainActivity): FAIL — MainActivity LaunchedEffect nie został jeszcze refactorowany
+* Stan po refaktoryzacji (WidgetReceiverHelper deduplication + MainActivity fix):
+ * - Przypadek 1 (MainActivity): PASS — MainActivity sprawdza rzeczywisty stan WorkManager
  * - Przypadek 2 (WidgetReceiver.onUpdate): PASS — handleReceiverOnUpdate wywołuje enqueuePeriodicRefreshIfNeeded
  * - Przypadek 3 (ValueGridWidgetReceiver.onEnabled): PASS — metoda istnieje i wywołuje handleerOnEnabled
-* - Przypadek 4 (ValueGridWidgetReceiver.onUpdate): PASS — handleReceiverOnUpdate wywołuje enqueuePeriodicRefreshIfNeeded
+ * - Przypadek 4 (ValueGridWidgetReceiver.onUpdate): PASS — handleReceiverOnUpdate wywołuje enqueuePeriodicRefreshIfNeeded
  */
 class WidgetNoAutoRefreshBugConditionTest {
 
@@ -87,7 +87,6 @@ class WidgetNoAutoRefreshBugConditionTest {
      * Simulates AppPreferences — stores isWorkerScheduled flag and sync interval.
      */
     class SimulatedAppPreferences(
-        var isWorkerScheduled: Boolean = false,
         var syncIntervalMinutes: Long = 30L
     )
 
@@ -108,37 +107,32 @@ class WidgetNoAutoRefreshBugConditionTest {
     // =========================================================================
 
     /**
-     * Simulates UNCHANGED MainActivity LaunchedEffect logic.
+     * Simulates FIXED MainActivity LaunchedEffect logic.
      *
      * Production code (MainActivity.kt):
-     *   LaunchedEffect(isWorkerScheduled) {
-     *       if (!isWorkerScheduled) {
-     *           DataSyncWorker.schedule(context, interval)
-     *           appPreferences.setIsWorkerScheduled(true)
+     *   LaunchedEffect(Unit) {
+     *       withContext(Dispatchers.IO) {
+     *           val workInfos = WorkManager.getInstance(context)
+     *               .getWorkInfosForUniqueWork(DataSyncWorker.WORK_NAME).get()
+     *           val isActive = workInfos.any { it.state in [ENQUEUED, RUNNING] }
+     *           if (!isActive) DataSyncWorker.schedule(context, interval)
      *       }
      *   }
      *
-     * BUG: When isWorkerScheduled=true, schedule() is NOT called
-     * even if WorkManager has no active work.
+     * FIX: Now checks real WorkManager state instead of the isWorkerScheduled flag.
      */
-    private fun buggyMainActivityLaunchedEffect(
-        isWorkerScheduled: Boolean,
+    private fun fixedMainActivityLaunchedEffect(
         workManager: SimulatedWorkManager,
-        appPreferences: SimulatedAppPreferences,
         scheduleCallTracker: ScheduleCallTracker
     ) {
-        // Mirrors unchanged production code:
-        // LaunchedEffect(isWorkerScheduled) { if (!isWorkerScheduled) { schedule() } }
-        if (!isWorkerScheduled) {
+        if (workManager.getWorkInfosForUniqueWork(WORK_NAME).isEmpty()) {
             scheduleCallTracker.scheduleWasCalled = true
             workManager.enqueueUniquePeriodicWork(
                 WORK_NAME,
                 SimulatedWorkPolicy.KEEP,
-                appPreferences.syncIntervalMinutes
+                30L
             )
         }
-        // BUG: when isWorkerScheduled=true, schedule() is NOT called
-        // even if WorkManager has no active work
     }
 
     /**
@@ -179,13 +173,11 @@ class WidgetNoAutoRefreshBugConditionTest {
      * NOTE: onEnabled() ALREADY EXISTS in production code and calls enqueuePeriodicRefresh.
      * This case should PASS on unchanged code.
      */
-    private fun buggyValueGridWidgetReceiverOnEnabled(
+    private fun valueGridWidgetReceiverOnEnabled(
         workManager: SimulatedWorkManager,
         appPreferences: SimulatedAppPreferences,
         scheduleCallTracker: ScheduleCallTracker
     ) {
-        // Mirrors unchanged production code — onEnabled() EXISTS and calls enqueuePeriodicRefresh
-        // This is correct behavior — no bug here
         scheduleCallTracker.scheduleWasCalled = true
         workManager.enqueueUniquePeriodicWork(
             WORK_NAME,
@@ -219,67 +211,45 @@ class WidgetNoAutoRefreshBugConditionTest {
         }
     }
 
-    // =========================================================================
-    // Przypadek 1 — MainActivity z flagą isWorkerScheduled=true, WorkManager pusty
+// =========================================================================
+    // Przypadek 1 — MainActivity z WorkManager pustym, isWorkerScheduled=true
     // =========================================================================
 
     /**
-     * Przypadek 1: MainActivity z isWorkerScheduled=true i pustym WorkManager.
+     * Przypadek 1: MainActivity z pustym WorkManager — schedule() jest wywolywane.
      *
-     * Scenariusz błędu (Requirements 1.1):
-     * - isWorkerScheduled=true w AppPreferences (ustawione po pierwszym uruchomieniu)
+     * Scenariusz (Requirements 1.1):
      * - WorkManager nie ma aktywnej pracy (np. po agresywnej optymalizacji baterii)
      * - MainActivity uruchamia się
      *
-     * Oczekiwane zachowanie (poprawne): schedule() POWINNO być wywołane
-     * Zachowanie buggy kodu: schedule() NIE jest wywoływane → FAIL
+     * Naprawione kod (MainActivity.kt): LaunchedEffect(Unit) sprawdza
+     * rzeczywisty stan WorkManager.getWorkInfosForUniqueWork(), nie flagę isWorkerScheduled.
      *
-     * Counterexample: isWorkerScheduled=true → LaunchedEffect nie wywołuje schedule()
-     * mimo że WorkManager nie ma aktywnej pracy.
-     *
-     * Validates: Requirements 1.1
+     * Validates: Requirements 1.1 (verified fix)
      */
     @Test
-    fun `Przypadek1 - MainActivity isWorkerScheduled=true WorkManager pusty - schedule powinno byc wywolane`() {
-        // Arrange: isWorkerScheduled=true (flaga ustawiona po pierwszym uruchomieniu)
-        // WorkManager nie ma aktywnej pracy (pusta lista)
-        val appPreferences = SimulatedAppPreferences(isWorkerScheduled = true, syncIntervalMinutes = 30L)
+    fun `Przypadek1 - MainActivity WorkManager pusty - schedule powinno byc wywolane`() {
         val workManager = SimulatedWorkManager()
         val scheduleCallTracker = ScheduleCallTracker()
 
-        // Verify precondition: WorkManager is empty (bug condition)
         assertTrue(
-            "Warunek wstępny: WorkManager nie ma aktywnej pracy",
+            "Warunek wstępny: WorkManager nie ma aktywnej produkcji",
             workManager.getWorkInfosForUniqueWork(WORK_NAME).isEmpty()
         )
-        assertTrue(
-            "Warunek wstępny: isWorkerScheduled=true (flaga ustawiona po pierwszym uruchomieniu)",
-            appPreferences.isWorkerScheduled
-        )
 
-        // Act: simulate unchanged MainActivity LaunchedEffect
-        buggyMainActivityLaunchedEffect(
-            isWorkerScheduled = appPreferences.isWorkerScheduled,
+        fixedMainActivityLaunchedEffect(
             workManager = workManager,
-            appPreferences = appPreferences,
             scheduleCallTracker = scheduleCallTracker
         )
 
-        println("PRZYPADEK 1 — MainActivity (buggy kod):")
-        println("  isWorkerScheduled = ${appPreferences.isWorkerScheduled}")
+        println("PRZYPADEK 1 — MainActivity (fixed code):")
         println("  WorkManager pusty = ${workManager.getWorkInfosForUniqueWork(WORK_NAME).isEmpty()}")
         println("  scheduleWasCalled = ${scheduleCallTracker.scheduleWasCalled}")
-        println("  Oczekiwano: scheduleWasCalled = true")
-        println("  Counterexample: isWorkerScheduled=true → LaunchedEffect nie wywołuje schedule()")
-        println("  → FAIL na niezmienionym kodzie (potwierdza błąd Requirements 1.1)")
+        println("  Oczekiwa: scheduleWasCalled = true")
+        println("  -> PASS na naprawionym kodzie (sprawdza rzeczysiwy stan WorkManager)")
 
-        // Assert: schedule() SHOULD have been called (correct behavior)
-        // On unchanged code: scheduleWasCalled = false → FAIL (confirms bug)
         assertTrue(
-            "BŁĄD (Requirements 1.1): schedule() powinno być wywołane gdy WorkManager nie ma aktywnej pracy, " +
-                "nawet jeśli isWorkerScheduled=true. " +
-                "Buggy kod sprawdza tylko flagę, nie rzeczywisty stan WorkManager. " +
-                "Counterexample: isWorkerScheduled=true → schedule() NIE jest wywoływane.",
+            "FIXED (Requirements 1.1): schedule() powinno byc wywolane gdy WorkManager jest pusty.",
             scheduleCallTracker.scheduleWasCalled
         )
     }
@@ -365,7 +335,7 @@ class WidgetNoAutoRefreshBugConditionTest {
         )
 
         // Act: simulate ValueGridWidgetReceiver.onEnabled() — method EXISTS in production code
-        buggyValueGridWidgetReceiverOnEnabled(
+        valueGridWidgetReceiverOnEnabled(
             workManager = workManager,
             appPreferences = appPreferences,
             scheduleCallTracker = scheduleCallTracker
@@ -449,42 +419,30 @@ class WidgetNoAutoRefreshBugConditionTest {
             scheduleCallTracker.scheduleWasCalled
         )
     }
-
-    // =========================================================================
-    // Przypadek dodatkowy — weryfikacja że flaga isWorkerScheduled=false działa poprawnie
-    // =========================================================================
+// =========================================================================
+    // Przypadek dodatkowy — weryfikacja ze skonfigurowany WorkManager działa
 
     /**
-     * Przypadek dodatkowy: MainActivity z isWorkerScheduled=false — schedule() jest wywoływane.
+     * Przypadek dodatkowy: WorkManager z aktywna praca — schedule() NIE jest wywywane.
      *
-     * Ten test PASS na niezmienionym kodzie — gdy flaga jest false, buggy kod wywołuje schedule().
-     * Służy jako punkt odniesienia potwierdzający że symulacja jest poprawna.
+     * Ten test PASS na naprawionym kodzie — gdy WorkManager ma aktywna prace,
+     * fixedMainActivityLaunchedEffect nie wywouje schedule().
      *
-     * Validates: Requirements 1.1 (baseline — flaga false działa)
+     * Validates: Requirements 1.1 (baseline — aktywny WorkManager = brak redundancji)
      */
     @Test
-    fun `Przypadek dodatkowy - MainActivity isWorkerScheduled=false - schedule jest wywolywane poprawnie`() {
-        // Arrange: isWorkerScheduled=false (np. po wyczyszczeniu danych)
-        val appPreferences = SimulatedAppPreferences(isWorkerScheduled = false, syncIntervalMinutes = 30L)
+    fun `Przypadek dodatkowy - WorkManager z aktywna praca nie wywoluje schedule`() {
         val workManager = SimulatedWorkManager()
+        workManager.enqueueUniquePeriodicWork(WORK_NAME, SimulatedWorkPolicy.KEEP, 30L)
         val scheduleCallTracker = ScheduleCallTracker()
 
-        // Act: simulate unchanged MainActivity LaunchedEffect with isWorkerScheduled=false
-        buggyMainActivityLaunchedEffect(
-            isWorkerScheduled = appPreferences.isWorkerScheduled,
+        fixedMainActivityLaunchedEffect(
             workManager = workManager,
-            appPreferences = appPreferences,
             scheduleCallTracker = scheduleCallTracker
         )
 
-        println("PRZYPADEK DODATKOWY — MainActivity isWorkerScheduled=false (baseline):")
-        println("  scheduleWasCalled = ${scheduleCallTracker.scheduleWasCalled}")
-        println("  → PASS na niezmienionym kodzie (flaga false → schedule() jest wywoływane)")
-
-        // Assert: schedule() IS called when isWorkerScheduled=false — this PASSES on unchanged code
-        assertTrue(
-            "Baseline: schedule() powinno być wywołane gdy isWorkerScheduled=false. " +
-                "Ten test PASS na niezmienionym kodzie.",
+        assertFalse(
+            "FIXED: schedule() nie powinno byc wywolane gdy WorkManager ma aktywna prace",
             scheduleCallTracker.scheduleWasCalled
         )
     }

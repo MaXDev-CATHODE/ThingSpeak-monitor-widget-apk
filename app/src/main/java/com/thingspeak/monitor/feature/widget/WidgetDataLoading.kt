@@ -88,15 +88,7 @@ fun loadWidgetDataFromPreferences(
     val chartFile = if (skipChartBitmap) null else prefs[WidgetPrefsKeys.KEY_CHART_FILE]
     val chartBitmap = if (chartFile != null) {
         WidgetChartCache.load(chartFile)
-    } else {
-        val chartBase64 = if (skipChartBitmap) null else prefs[WidgetPrefsKeys.KEY_CHART_BITMAP]
-        if (chartBase64 != null) {
-            try {
-                val bytes = android.util.Base64.decode(chartBase64, android.util.Base64.DEFAULT)
-                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            } catch (e: Exception) { null }
-        } else null
-    }
+    } else null
 
     return WidgetData(
         channelName = name ?: WidgetPrefsKeys.LOADING_PLACEHOLDER,

@@ -28,10 +28,7 @@ suspend fun findWidgetGlanceId(
     context: Context,
     appWidgetId: Int,
     maxRetries: Int = 2,
-    widgetClasses: List<Class<out androidx.glance.appwidget.GlanceAppWidget>> = listOf(
-        ThingSpeakGlanceWidget::class.java,
-        ValueGridWidget::class.java
-    )
+    widgetClasses: List<Class<out androidx.glance.appwidget.GlanceAppWidget>> = WidgetRegistry.ALL_CLASSES
 ): androidx.glance.GlanceId? {
     var retries = maxRetries
     val manager = androidx.glance.appwidget.GlanceAppWidgetManager(context)
