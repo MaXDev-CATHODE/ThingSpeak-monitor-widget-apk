@@ -51,6 +51,16 @@ object WidgetPrefsKeys {
     val KEY_HEAL_ATTEMPTED: Preferences.Key<Boolean> = booleanPreferencesKey("_heal_attempted")
     val KEY_HEAL_RETRY_COUNT: Preferences.Key<Int> = intPreferencesKey("_heal_retry_count")
     const val MAX_HEAL_RETRIES = 3
+    val KEY_HEAL_LAST_ATTEMPT_MS: Preferences.Key<Long> = longPreferencesKey("_heal_last_attempt_ms")
+    const val HEAL_COOLDOWN_MINUTES = 5L
+
+    val KEY_BG_COLOR_CUSTOMIZED: Preferences.Key<Boolean> = booleanPreferencesKey("_bg_color_customized")
+    val KEY_TEXT_COLOR_CUSTOMIZED: Preferences.Key<Boolean> = booleanPreferencesKey("_text_color_customized")
+    val KEY_TRANSPARENCY_CUSTOMIZED: Preferences.Key<Boolean> = booleanPreferencesKey("_transparency_customized")
+    val KEY_FONT_SIZE_CUSTOMIZED: Preferences.Key<Boolean> = booleanPreferencesKey("_font_size_customized")
+    val KEY_IS_GLASS_CUSTOMIZED: Preferences.Key<Boolean> = booleanPreferencesKey("_is_glass_customized")
+
+    const val STATUS_OFFLINE = "OFFLINE"
 
     // ---- Widget layout constants (dp) ----
     const val HEIGHT_TINY_THRESHOLD = 100

@@ -43,6 +43,15 @@ suspend fun performWidgetRefreshAction(
 
     if (!isOnline) {
         android.util.Log.w(WIDGET_LOG_TAG, "performWidgetRefreshAction: device offline, refresh aborted for widget $appWidgetId")
+        androidx.glance.appwidget.state.updateAppWidgetState(
+            context, WidgetPreferencesStateDefinition, glanceId
+        ) { prefs ->
+            prefs.toMutablePreferences().apply {
+                this[WidgetPrefsKeys.KEY_IS_REFRESHING] = false
+                this[WidgetPrefsKeys.KEY_LAST_SYNC_STATUS] = WidgetPrefsKeys.STATUS_OFFLINE
+            }
+        }
+        updateWidget()
         return
     }
 

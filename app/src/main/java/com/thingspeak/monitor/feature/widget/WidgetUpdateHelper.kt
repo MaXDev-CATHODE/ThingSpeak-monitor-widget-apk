@@ -42,10 +42,23 @@ object WidgetUpdateHelper {
         boundChannelId: Long
     ): Boolean {
         val retryCount = prefs[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] ?: 0
+        val lastAttemptMs = prefs[WidgetPrefsKeys.KEY_HEAL_LAST_ATTEMPT_MS] ?: 0L
+        val cooldownElapsed = (System.currentTimeMillis() - lastAttemptMs) >= WidgetPrefsKeys.HEAL_COOLDOWN_MINUTES * 60_000L
+
         return data.channelName == WidgetPrefsKeys.LOADING_PLACEHOLDER &&
             boundChannelId != -1L &&
             !data.isRefreshing &&
-            retryCount < WidgetPrefsKeys.MAX_HEAL_RETRIES
+            (retryCount < WidgetPrefsKeys.MAX_HEAL_RETRIES || (retryCount >= WidgetPrefsKeys.MAX_HEAL_RETRIES && cooldownElapsed))
+    }
+
+    fun isHealExhausted(prefs: Preferences, data: WidgetData, boundChannelId: Long): Boolean {
+        val retryCount = prefs[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] ?: 0
+        val lastAttemptMs = prefs[WidgetPrefsKeys.KEY_HEAL_LAST_ATTEMPT_MS] ?: 0L
+        val cooldownElapsed = (System.currentTimeMillis() - lastAttemptMs) >= WidgetPrefsKeys.HEAL_COOLDOWN_MINUTES * 60_000L
+        return data.channelName == WidgetPrefsKeys.LOADING_PLACEHOLDER &&
+            boundChannelId != -1L &&
+            retryCount >= WidgetPrefsKeys.MAX_HEAL_RETRIES &&
+            !cooldownElapsed
     }
 
     /**
@@ -61,9 +74,25 @@ object WidgetUpdateHelper {
                 p.toMutablePreferences().apply {
                     val current = this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] ?: 0
                     this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = (current + 1).coerceAtMost(9)
+                    this[WidgetPrefsKeys.KEY_HEAL_LAST_ATTEMPT_MS] = System.currentTimeMillis()
                 }
             }
         }
+    }
+
+    fun handleHealExhausted(context: Context, glanceId: GlanceId) {
+        kotlinx.coroutines.runBlocking {
+            updateAppWidgetState(
+                context, WidgetPreferencesStateDefinition, glanceId
+            ) { p ->
+                p.toMutablePreferences().apply {
+                    this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
+                    this[WidgetPrefsKeys.KEY_HEAL_LAST_ATTEMPT_MS] = 0L
+                    this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
+                }
+            }
+        }
+        enqueuePeriodicRefreshIfNeeded(context)
     }
 
     /**
@@ -277,13 +306,28 @@ object WidgetUpdateHelper {
                     this.remove(WidgetPrefsKeys.KEY_CHART_BITMAP)
                 }
 
-                // PROTECT visual settings — only overwrite if user hasn't customized them via config screen
                 val isCustomized = this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] ?: false
-                if (!isCustomized) {
+                if (isCustomized && this[WidgetPrefsKeys.KEY_BG_COLOR_CUSTOMIZED] == null &&
+                    this[WidgetPrefsKeys.KEY_TEXT_COLOR_CUSTOMIZED] == null) {
+                    this[WidgetPrefsKeys.KEY_BG_COLOR_CUSTOMIZED] = true
+                    this[WidgetPrefsKeys.KEY_TEXT_COLOR_CUSTOMIZED] = true
+                    this[WidgetPrefsKeys.KEY_TRANSPARENCY_CUSTOMIZED] = true
+                    this[WidgetPrefsKeys.KEY_FONT_SIZE_CUSTOMIZED] = true
+                    this[WidgetPrefsKeys.KEY_IS_GLASS_CUSTOMIZED] = true
+                }
+                if (!isCustomized || this[WidgetPrefsKeys.KEY_BG_COLOR_CUSTOMIZED] != true) {
                     this[WidgetPrefsKeys.KEY_BG_COLOR] = channel.widgetBgColorHex ?: "#FFFFFF"
+                }
+                if (!isCustomized || this[WidgetPrefsKeys.KEY_TEXT_COLOR_CUSTOMIZED] != true) {
                     this[WidgetPrefsKeys.KEY_TEXT_COLOR] = channel.widgetTextColorHex ?: ""
+                }
+                if (!isCustomized || this[WidgetPrefsKeys.KEY_TRANSPARENCY_CUSTOMIZED] != true) {
                     this[WidgetPrefsKeys.KEY_TRANSPARENCY] = channel.widgetTransparency
+                }
+                if (!isCustomized || this[WidgetPrefsKeys.KEY_FONT_SIZE_CUSTOMIZED] != true) {
                     this[WidgetPrefsKeys.KEY_FONT_SIZE] = channel.widgetFontSize
+                }
+                if (!isCustomized || this[WidgetPrefsKeys.KEY_IS_GLASS_CUSTOMIZED] != true) {
                     this[WidgetPrefsKeys.KEY_IS_GLASS] = channel.isGlassmorphismEnabled ?: false
                 }
 

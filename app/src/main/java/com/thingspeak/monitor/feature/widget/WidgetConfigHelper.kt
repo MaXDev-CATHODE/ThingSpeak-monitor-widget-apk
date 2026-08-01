@@ -7,7 +7,9 @@ import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
 import dagger.hilt.android.EntryPointAccessors
 import com.thingspeak.monitor.core.datastore.ChannelPreferences
+import com.thingspeak.monitor.core.datastore.SavedChannel
 import com.thingspeak.monitor.feature.channel.domain.model.AlertRule
+import kotlinx.coroutines.flow.first
 
 data class SavedWidgetPrefs(
     val channelId: Long?,
@@ -82,6 +84,17 @@ suspend fun saveWidgetConfigAndRefresh(
     )
 
     if (glanceId != null) {
+        val channelDefaults = channelPreferences.observe().first().find { it.id == channelId }
+
+        val isBgCustomized = bgColor != null && channelDefaults != null &&
+            bgColor != channelDefaults.widgetBgColorHex
+        val isTextCustomized = textColor != null && channelDefaults != null &&
+            textColor != channelDefaults.widgetTextColorHex
+        val isTransCustomized = channelDefaults != null &&
+            kotlin.math.abs(transparency - channelDefaults.widgetTransparency) > 0.001f
+        val isFontCustomized = channelDefaults != null && fontSize != channelDefaults.widgetFontSize
+        val isGlassCustomized = channelDefaults != null && isGlass != channelDefaults.isGlassmorphismEnabled
+
         updateAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId) { p ->
             p.toMutablePreferences().apply {
                 this[WidgetPrefsKeys.KEY_CHANNEL_ID] = channelId
@@ -95,6 +108,11 @@ suspend fun saveWidgetConfigAndRefresh(
                 this[WidgetPrefsKeys.KEY_CHART_RESULTS] = chartResultsCount
                 this[WidgetPrefsKeys.KEY_VISIBLE_FIELDS] = visibleFields.map { it.toString() }.toSet()
                 this[WidgetPrefsKeys.KEY_WIDGET_VISUALS_CUSTOMIZED] = true
+                this[WidgetPrefsKeys.KEY_BG_COLOR_CUSTOMIZED] = isBgCustomized
+                this[WidgetPrefsKeys.KEY_TEXT_COLOR_CUSTOMIZED] = isTextCustomized
+                this[WidgetPrefsKeys.KEY_TRANSPARENCY_CUSTOMIZED] = isTransCustomized
+                this[WidgetPrefsKeys.KEY_FONT_SIZE_CUSTOMIZED] = isFontCustomized
+                this[WidgetPrefsKeys.KEY_IS_GLASS_CUSTOMIZED] = isGlassCustomized
                 this[WidgetPrefsKeys.KEY_BG_COLOR_MODE] = bgColorMode ?: WidgetPrefsKeys.COLOR_MODE_CUSTOM
                 this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
                 this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
@@ -103,6 +121,10 @@ suspend fun saveWidgetConfigAndRefresh(
                     this.remove(WidgetPrefsKeys.KEY_CHART_FILE)
                 }
             }
+        }
+
+        if (!skipChartClear) {
+            WidgetChartCache.clear(context, appWidgetId)
         }
 
         performWidgetRefreshAction(

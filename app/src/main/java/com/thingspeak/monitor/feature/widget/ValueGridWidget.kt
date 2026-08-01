@@ -22,6 +22,10 @@ class ValueGridWidget : GlanceAppWidget() {
                     WidgetUpdateHelper.bumpHealRetry(context, id)
                     updateAppWidget(context, gCtx.appWidgetId)
                 }
+            } else if (WidgetUpdateHelper.isHealExhausted(prefs, data, gCtx.boundChannelId)) {
+                androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
+                    WidgetUpdateHelper.handleHealExhausted(context, id)
+                }
             }
 
             ValueGridContent(context, data)
