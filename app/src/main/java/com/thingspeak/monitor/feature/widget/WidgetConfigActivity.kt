@@ -87,8 +87,6 @@ class WidgetConfigActivity : ComponentActivity() {
                     initialTransparency = savedTransparency ?: existing?.widgetTransparency ?: 1.0f,
                     initialIsGlass = savedIsGlass ?: existing?.isGlassmorphismEnabled,
                     initialBgColorMode = savedBgColorMode,
-                    initialChartTimespan = existing?.chartProcessingPeriod,
-                    initialChartTimespanStr = existing?.chartTimespan,
                     initialChartResults = existing?.chartResults ?: 60,
                     initialFontSize = savedFontSize ?: existing?.widgetFontSize ?: 12,
                     initialTextColorHex = savedTextColor ?: existing?.widgetTextColorHex,
@@ -110,7 +108,7 @@ class WidgetConfigActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onSave = { chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, _, isGlass, colorMode, _, _, chResults, alertRules ->
+                    onSave = { chanId, apiKey, chanName, bgColor, txtColor, transparency, fontSize, visibleFields, _, isGlass, colorMode, chResults, alertRules ->
                         if (!saveGuard.compareAndSet(false, true)) return@WidgetConfigScreen
                         isSaving = true
                         coroutineScope.launch {
