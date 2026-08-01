@@ -462,17 +462,28 @@ fun WidgetConfigScreen(
         }
             
         Spacer(modifier = Modifier.height(16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Analysis Depth (Results): ${chartResults.toInt()}", style = MaterialTheme.typography.bodySmall, color = textColor, modifier = Modifier.weight(1f))
-        }
+        Text("Analysis Depth (Results): ${chartResults.toInt()}", style = MaterialTheme.typography.bodySmall, color = textColor)
         Slider(
             value = chartResults,
             onValueChange = { chartResults = it },
             valueRange = 1f..8000f,
-            steps = 0,
+            steps = 7,
             modifier = Modifier.padding(horizontal = 8.dp)
         )
-        Text("Tip: Higher results = more detail, lower = faster load.", style = MaterialTheme.typography.labelSmall, color = textColor.copy(alpha = 0.5f))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            listOf(1, 10, 60, 100, 500, 1000, 2000, 4000, 8000).forEach { v ->
+                Text(
+                    text = if (v >= 1000) "${v / 1000}k" else "$v",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = textColor.copy(alpha = 0.4f),
+                    fontSize = 9.sp
+                )
+            }
+        }
+        Text("Higher = more detail, lower = faster load.", style = MaterialTheme.typography.labelSmall, color = textColor.copy(alpha = 0.5f))
         
         Spacer(modifier = Modifier.height(24.dp))
 
