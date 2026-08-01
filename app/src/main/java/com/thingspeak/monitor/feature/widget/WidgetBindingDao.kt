@@ -20,6 +20,6 @@ interface WidgetBindingDao {
     @Query("SELECT * FROM widget_bindings WHERE appWidgetId = :appWidgetId")
     suspend fun getBindingSync(appWidgetId: Int): WidgetBindingEntity?
 
-    @Query("DELETE FROM widget_bindings")
-    suspend fun clearAllBindings()
+    @Query("DELETE FROM widget_bindings WHERE appWidgetId NOT IN (:activeIds)")
+    suspend fun deleteOrphanedBindings(activeIds: Set<Int>)
 }

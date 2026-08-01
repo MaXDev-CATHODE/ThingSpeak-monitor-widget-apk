@@ -116,9 +116,15 @@ fun handleReceiverOnDisabled(
     android.util.Log.i(WIDGET_LOG_TAG, "$logTag onDisabled: cleaning orphaned bindings")
     CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
         try {
-            repository.clearAllBindings()
+            val manager = android.appwidget.AppWidgetManager.getInstance(context)
+            val activeIds = mutableSetOf<Int>()
+            for (widgetClass in WidgetRegistry.ALL_CLASSES) {
+                val componentName = android.content.ComponentName(context, WidgetRegistry.getReceiverClass(widgetClass))
+                activeIds.addAll(manager.getAppWidgetIds(componentName).toSet())
+            }
+            repository.deleteOrphanedBindings(activeIds)
             WidgetChartCache.clearAll(context)
-            android.util.Log.i(WIDGET_LOG_TAG, "onDisabled: async cleanup completed")
+            android.util.Log.i(WIDGET_LOG_TAG, "onDisabled: async cleanup completed (active widget count: ${activeIds.size})")
         } catch (e: Exception) {
             android.util.Log.e(WIDGET_LOG_TAG, "onDisabled: cleanup failed", e)
         }

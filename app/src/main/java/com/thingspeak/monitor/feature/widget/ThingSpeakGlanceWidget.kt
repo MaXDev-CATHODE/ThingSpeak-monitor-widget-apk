@@ -22,15 +22,16 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
             val prefs = androidx.glance.currentState<androidx.datastore.preferences.core.Preferences>()
             val data = loadWidgetDataFromPreferences(prefs, gCtx.boundChannelId, gCtx.syncIntervalMinutes)
 
-            if (WidgetUpdateHelper.shouldTriggerSelfHeal(prefs, data, gCtx.boundChannelId)) {
-                androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
-                    WidgetUpdateHelper.bumpHealRetry(context, id)
-                    updateAppWidget(context, gCtx.appWidgetId)
-                }
-            } else if (WidgetUpdateHelper.isHealExhausted(prefs, data, gCtx.boundChannelId)) {
-                androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
-                    WidgetUpdateHelper.handleHealExhausted(context, id)
-                }
+            androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
+                WidgetUpdateHelper.handleSelfHealing(
+                    prefs = prefs,
+                    data = data,
+                    boundChannelId = gCtx.boundChannelId,
+                    context = context,
+                    id = id,
+                    appWidgetId = gCtx.appWidgetId,
+                    updateAppWidget = { updateAppWidget(context, gCtx.appWidgetId) }
+                )
             }
 
             WidgetUI(data)

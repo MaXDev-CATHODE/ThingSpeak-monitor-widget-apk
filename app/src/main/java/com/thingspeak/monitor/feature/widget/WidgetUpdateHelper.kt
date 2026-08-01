@@ -32,6 +32,28 @@ object WidgetUpdateHelper {
     const val MAX_GLANCE_RETRIES = 2
 
     /**
+     * Handles self-healing logic shared across all widget types.
+     * Triggers a heal update if the widget is stuck in loading state,
+     * or resets the heal state if retries are exhausted and cooldown has elapsed.
+     */
+    suspend fun handleSelfHealing(
+        prefs: Preferences,
+        data: WidgetData,
+        boundChannelId: Long,
+        context: Context,
+        id: GlanceId,
+        appWidgetId: Int,
+        updateAppWidget: suspend () -> Unit
+    ) {
+        if (shouldTriggerSelfHeal(prefs, data, boundChannelId)) {
+            bumpHealRetry(context, id)
+            updateAppWidget()
+        } else if (isHealExhausted(prefs, data, boundChannelId)) {
+            handleHealExhausted(context, id)
+        }
+    }
+
+    /**
      * Checks whether self-healing should be triggered.
      * Capped at [WidgetPrefsKeys.MAX_HEAL_RETRIES] to prevent infinite soft-loop
      * when the upstream data source is consistently unavailable.
@@ -157,13 +179,11 @@ object WidgetUpdateHelper {
      */
     fun cancelRefreshIfNoWidgetsLeft(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
-        val remainingGlance = manager.getAppWidgetIds(
-            ComponentName(context, WidgetReceiver::class.java)
-        )
-        val remainingValueGrid = manager.getAppWidgetIds(
-            ComponentName(context, ValueGridWidgetReceiver::class.java)
-        )
-        if (remainingGlance.isEmpty() && remainingValueGrid.isEmpty()) {
+        val anyRemaining = WidgetRegistry.ALL_CLASSES.any { widgetClass ->
+            val receiverClass = WidgetRegistry.getReceiverClass(widgetClass)
+            manager.getAppWidgetIds(ComponentName(context, receiverClass)).isNotEmpty()
+        }
+        if (!anyRemaining) {
             WorkManager.getInstance(context).cancelUniqueWork(DataSyncWorker.WORK_NAME)
             android.util.Log.w(WIDGET_LOG_TAG, "Last widget of any type removed — periodic refresh cancelled")
         }

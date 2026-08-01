@@ -47,8 +47,8 @@ class WidgetBindingRepository @Inject constructor(
         widgetBindingDao.deleteBinding(appWidgetId)
     }
 
-    suspend fun clearAllBindings() {
-        widgetBindingDao.clearAllBindings()
+    suspend fun deleteOrphanedBindings(activeIds: Set<Int>) {
+        widgetBindingDao.deleteOrphanedBindings(activeIds)
     }
 
     /**
