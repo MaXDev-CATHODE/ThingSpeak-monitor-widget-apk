@@ -71,3 +71,36 @@ fun bitmapToBase64(bitmap: android.graphics.Bitmap?, quality: Int = 90): String?
         null
     }
 }
+
+data class ResolvedWidgetColors(
+    val bgColor: androidx.compose.ui.graphics.Color,
+    val textColor: androidx.compose.ui.graphics.Color,
+    val isDarkBg: Boolean
+)
+
+fun resolveWidgetColors(data: WidgetData, context: Context): ResolvedWidgetColors {
+    val effectiveBgHex = darkModeAutoBgColor(data, context)
+    val isDarkMode = isSystemDarkMode(context)
+    val baseColor = resolveSystemAwareBackground(
+        prefHex = effectiveBgHex,
+        isDarkMode = isDarkMode,
+        context = context,
+        colorMode = data.bgColorMode
+    )
+
+    val bgColor = if (data.isGlass) {
+        androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f)
+    } else {
+        androidx.compose.ui.graphics.Color(baseColor).copy(alpha = data.transparency)
+    }
+
+    val isDarkBg = try {
+        isColorDark(baseColor)
+    } catch (e: Exception) {
+        false
+    }
+
+    val textColor = darkModeAutoTextColor(data, isDarkBg)
+
+    return ResolvedWidgetColors(bgColor, textColor, isDarkBg)
+}

@@ -29,27 +29,11 @@ private fun ValueGridContentImpl(context: Context, data: WidgetData) {
         WidgetUtils.isDataStale(it.createdAt, data.syncIntervalMinutes * 60 * 1000L) 
     } ?: true
 
-    // Dark mode auto-detection
-    val effectiveBgHex = darkModeAutoBgColor(data, context)
-    val isDarkMode = isSystemDarkMode(context)
-    val baseColor = resolveSystemAwareBackground(
-        prefHex = effectiveBgHex,
-        isDarkMode = isDarkMode,
-        context = context,
-        colorMode = data.bgColorMode
-    )
-
-    val isDarkBg = isColorDark(baseColor)
-
-    val contentColorVal = darkModeAutoTextColor(data, isDarkBg)
-    
+    val resolved = resolveWidgetColors(data, context)
+    val isDarkBg = resolved.isDarkBg
+    val contentColorVal = resolved.textColor
     val secondaryContentColorVal = contentColorVal.copy(alpha = 0.7f)
-
-    val bgColor = if (data.isGlass) {
-        ColorProvider(Color.White.copy(alpha = 0.12f))
-    } else {
-        ColorProvider(Color(baseColor).copy(alpha = data.transparency))
-    }
+    val bgColor = ColorProvider(resolved.bgColor)
 
     Column(
         modifier = GlanceModifier
@@ -193,7 +177,7 @@ private fun ValueGridContentImpl(context: Context, data: WidgetData) {
                                     data = data,
                                     contentColor = if (isStale) contentColorVal.copy(alpha = 0.5f) else contentColorVal,
                                     secondaryColor = if (isStale) secondaryContentColorVal.copy(alpha = 0.4f) else secondaryContentColorVal,
-                                    baseColor = baseColor,
+                                    baseColor = android.graphics.Color.parseColor(data.bgColorHex ?: "#FFFFFF"),
                                     tileCount = fieldsToRender.size,
                                     isSmallHeight = isSmallHeight
                                 )

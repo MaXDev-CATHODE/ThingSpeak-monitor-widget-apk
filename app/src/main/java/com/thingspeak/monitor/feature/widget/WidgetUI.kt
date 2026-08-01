@@ -81,28 +81,10 @@ private fun WidgetUIContent(data: WidgetData) {
     }
     val pad = if (isCompact) 4 else 8
     
-    // Dark mode auto-detection: swap default white bg → dark when system is dark
-    val effectiveBgHex = darkModeAutoBgColor(data, context)
-    val isDarkMode = isSystemDarkMode(context)
-    val baseColor = resolveSystemAwareBackground(
-        prefHex = effectiveBgHex,
-        isDarkMode = isDarkMode,
-        context = context,
-        colorMode = data.bgColorMode
-    )
-
-    val bgColor = if (data.isGlass) {
-        Color.White.copy(alpha = 0.12f)
-    } else {
-        Color(baseColor).copy(alpha = data.transparency)
-    }
-
-    val isDarkBg = try {
-        isColorDark(baseColor)
-    } catch (e: Exception) {
-        false
-    }
-    val textColor = darkModeAutoTextColor(data, isDarkBg)
+    val resolved = resolveWidgetColors(data, context)
+    val bgColor = resolved.bgColor
+    val textColor = resolved.textColor
+    val isDarkBg = resolved.isDarkBg
     
     val buttonBg = if (isDarkBg) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f)
 
