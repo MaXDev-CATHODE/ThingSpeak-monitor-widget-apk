@@ -649,7 +649,7 @@ private fun AlertThresholdSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         visibleFields.sorted().forEach { fieldNum ->
-            val name = fieldNames[fieldNum]?.takeIf { it.isNotBlank() } ?: "Field $fieldNum"
+            val name = fieldNames[fieldNum]?.takeIf { it.isNotBlank() } ?: stringResource(R.string.widget_field_name, fieldNum)
             val (minStr, maxStr) = fieldAlerts[fieldNum] ?: ("" to "")
 
             Column(
