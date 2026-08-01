@@ -32,6 +32,7 @@ Thumbs.db
 
 # --- Logi ---
 *.log
+diag-*
 build_errors_2.txt
 build_errors.txt
 build_out.txt
