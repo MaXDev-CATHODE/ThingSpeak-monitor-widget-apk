@@ -374,30 +374,34 @@ object WidgetUpdateHelper {
 
         for (widgetClass in WidgetRegistry.ALL_CLASSES) {
             manager.getGlanceIds(widgetClass).forEach { glanceId ->
-                val appWidgetId = manager.getAppWidgetId(glanceId)
-                if (bindingRepo.getBindingSync(appWidgetId) == channel.id) {
-                    val chartFile = if (WidgetRegistry.isChartWidget(widgetClass) && feedEntries != null && feedEntries.isNotEmpty()) {
-                        WidgetChartGenerator.generateAndSaveChart(
-                            context = context,
-                            channel = channel,
-                            entries = feedEntries.reversed(),
-                            appWidgetId = appWidgetId
-                        )
-                    } else null
+                try {
+                    val appWidgetId = manager.getAppWidgetId(glanceId)
+                    if (bindingRepo.getBindingSync(appWidgetId) == channel.id) {
+                        val chartFile = if (WidgetRegistry.isChartWidget(widgetClass) && feedEntries != null && feedEntries.isNotEmpty()) {
+                            WidgetChartGenerator.generateAndSaveChart(
+                                context = context,
+                                channel = channel,
+                                entries = feedEntries.reversed(),
+                                appWidgetId = appWidgetId
+                            )
+                        } else null
 
-                    updateWidgetPreferences(
-                        context = context,
-                        glanceId = glanceId,
-                        channel = channel,
-                        latestFeed = latestFeed,
-                        chartFile = chartFile,
-                        violatedMinFields = violatedMinFields,
-                        violatedMaxFields = violatedMaxFields,
-                        minSetFields = minSetFields,
-                        maxSetFields = maxSetFields,
-                        skipChartPrefs = !WidgetRegistry.isChartWidget(widgetClass)
-                    )
-                    WidgetRegistry.create(widgetClass).update(context, glanceId)
+                        updateWidgetPreferences(
+                            context = context,
+                            glanceId = glanceId,
+                            channel = channel,
+                            latestFeed = latestFeed,
+                            chartFile = chartFile,
+                            violatedMinFields = violatedMinFields,
+                            violatedMaxFields = violatedMaxFields,
+                            minSetFields = minSetFields,
+                            maxSetFields = maxSetFields,
+                            skipChartPrefs = !WidgetRegistry.isChartWidget(widgetClass)
+                        )
+                        WidgetRegistry.create(widgetClass).update(context, glanceId)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e(WIDGET_LOG_TAG, "pushToBoundWidgets: failed for widget class ${widgetClass.simpleName}", e)
                 }
             }
         }
