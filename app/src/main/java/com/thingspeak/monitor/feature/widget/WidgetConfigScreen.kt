@@ -547,48 +547,15 @@ fun WidgetConfigScreen(
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
-            Text("Field Thresholds (Alarms)", style = MaterialTheme.typography.titleMedium, color = textColor)
-            Text("Set Min/Max for alerts. Leave empty to disable.", style = MaterialTheme.typography.labelSmall, color = textColor.copy(alpha = 0.5f))
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                visibleFields.sorted().forEach { fieldNum ->
-                    val name = currentFieldNames[fieldNum]?.takeIf { it.isNotBlank() } ?: stringResource(R.string.widget_field_name, fieldNum)
-                    val (minStr, maxStr) = fieldAlerts[fieldNum] ?: ("" to "")
-                    
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                            .padding(12.dp)
-                    ) {
-                        Text(text = name, style = MaterialTheme.typography.bodyMedium, color = textColor, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = minStr,
-                                onValueChange = { 
-                                    fieldAlerts = fieldAlerts.toMutableMap().apply { this[fieldNum] = it.trim() to maxStr }
-                                },
-                                label = { Text("Min", fontSize = 10.sp) },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                            )
-                            OutlinedTextField(
-                                value = maxStr,
-                                onValueChange = { 
-                                    fieldAlerts = fieldAlerts.toMutableMap().apply { this[fieldNum] = minStr to it.trim() }
-                                },
-                                label = { Text("Max", fontSize = 10.sp) },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                            )
-                        }
-                    }
-                }
-            }
+            AlertThresholdSection(
+                visibleFields = visibleFields,
+                fieldNames = currentFieldNames,
+                fieldAlerts = fieldAlerts,
+                onFieldAlertChange = { fieldNum, min, max ->
+                    fieldAlerts = fieldAlerts.toMutableMap().apply { this[fieldNum] = min to max }
+                },
+                textColor = textColor
+            )
             Spacer(modifier = Modifier.height(24.dp))
         }
 
@@ -664,6 +631,54 @@ fun WidgetConfigScreen(
             contentAlignment = Alignment.Center
         ) {
             androidx.compose.material3.CircularProgressIndicator()
+        }
+    }
+}
+
+@Composable
+private fun AlertThresholdSection(
+    visibleFields: Set<Int>,
+    fieldNames: Map<Int, String>,
+    fieldAlerts: Map<Int, Pair<String, String>>,
+    onFieldAlertChange: (Int, String, String) -> Unit,
+    textColor: Color
+) {
+    Text("Field Thresholds (Alarms)", style = MaterialTheme.typography.titleMedium, color = textColor)
+    Text("Set Min/Max for alerts. Leave empty to disable.", style = MaterialTheme.typography.labelSmall, color = textColor.copy(alpha = 0.5f))
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        visibleFields.sorted().forEach { fieldNum ->
+            val name = fieldNames[fieldNum]?.takeIf { it.isNotBlank() } ?: "Field $fieldNum"
+            val (minStr, maxStr) = fieldAlerts[fieldNum] ?: ("" to "")
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                    .padding(12.dp)
+            ) {
+                Text(text = name, style = MaterialTheme.typography.bodyMedium, color = textColor, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = minStr,
+                        onValueChange = { onFieldAlertChange(fieldNum, it.trim(), maxStr) },
+                        label = { Text("Min", fontSize = 10.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                    OutlinedTextField(
+                        value = maxStr,
+                        onValueChange = { onFieldAlertChange(fieldNum, minStr, it.trim()) },
+                        label = { Text("Max", fontSize = 10.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+            }
         }
     }
 }
