@@ -56,7 +56,7 @@ fun ChartScreen(
     modifier: Modifier = Modifier,
     viewModel: ChartViewModel = hiltViewModel()
 ) {
-    android.util.Log.d("TS_DEBUG", "ChartScreen COMPOSE: channelId=$channelId")
+    android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "ChartScreen COMPOSE: channelId=$channelId")
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val isDailyRange by viewModel.isDailyRange.collectAsStateWithLifecycle()

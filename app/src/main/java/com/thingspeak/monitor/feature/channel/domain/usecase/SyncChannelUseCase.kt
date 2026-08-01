@@ -41,7 +41,7 @@ class SyncChannelUseCase @Inject constructor(
             try {
                 repository.refreshFeed(channel.id, channel.apiKey, maxResults)
             } catch (e: Exception) {
-                Log.w("TS_DEBUG", "SyncChannelUseCase: Refresh failed for ${channel.id}, using cache: ${e.message}")
+                Log.w(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "SyncChannelUseCase: Refresh failed for ${channel.id}, using cache: ${e.message}")
             }
 
             // 2. Load latest data
@@ -77,7 +77,7 @@ class SyncChannelUseCase @Inject constructor(
                 
                 if (currentSignature.isNotEmpty()) {
                     if (firedAlert == null || firedAlert.violationSignature != currentSignature) {
-                        Log.i("TS_DEBUG", "SyncChannelUseCase: NEW ALARM for channel ${channel.id}, field $fieldNum: $currentSignature")
+                        Log.i(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "SyncChannelUseCase: NEW ALARM for channel ${channel.id}, field $fieldNum: $currentSignature")
                         newViolationsToNotify.addAll(currentFieldViolations)
                         repository.saveFiredAlert(FiredAlert(
                             channelId = channel.id,
@@ -88,10 +88,10 @@ class SyncChannelUseCase @Inject constructor(
                         ))
                         anyAlertStateChanged = true
                     } else {
-                        Log.v("TS_DEBUG", "SyncChannelUseCase: Alarm for field $fieldNum debounced.")
+                        Log.v(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "SyncChannelUseCase: Alarm for field $fieldNum debounced.")
                     }
                 } else if (firedAlert != null) {
-                    Log.i("TS_DEBUG", "SyncChannelUseCase: Alarm for field $fieldNum CLEARED for channel ${channel.id}")
+                    Log.i(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "SyncChannelUseCase: Alarm for field $fieldNum CLEARED for channel ${channel.id}")
                     repository.deleteFiredAlert(channel.id, fieldNum)
                     anyAlertStateChanged = true
                 }
@@ -118,7 +118,7 @@ class SyncChannelUseCase @Inject constructor(
                 alertStateChanged = anyAlertStateChanged
             )
         } catch (e: Exception) {
-            Log.e("TS_DEBUG", "SyncChannelUseCase: CRITICAL ERROR for ${channel.id}", e)
+            Log.e(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "SyncChannelUseCase: CRITICAL ERROR for ${channel.id}", e)
             Result(
                 channel = channel,
                 latestEntry = FeedEntry(0L, "—", emptyMap()),

@@ -116,7 +116,7 @@ class ChartViewModel @Inject constructor(
     private var autoRefreshJob: Job? = null
 
     init {
-        android.util.Log.d("TS_DEBUG", "ChartViewModel INIT")
+        android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "ChartViewModel INIT")
         observeChannelData()
     }
 
@@ -149,7 +149,7 @@ class ChartViewModel @Inject constructor(
     private var stableBaselineX: Long? = null
 
     fun loadChartData(days: Int = _currentRangeDays.value, isSilent: Boolean = false) {
-        android.util.Log.d("TS_DEBUG", "loadChartData START: days=$days, silent=$isSilent")
+        android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "loadChartData START: days=$days, silent=$isSilent")
         if (_currentRangeDays.value != days) {
             stableBaselineX = null
         }
@@ -181,7 +181,7 @@ class ChartViewModel @Inject constructor(
                 val finalDays = if (days <= 0) 1 else days
 
                 val startTime = System.currentTimeMillis()
-                android.util.Log.d("TS_DEBUG", "loadChartData fetching: days=$finalDays, results=$finalResults, avg=$averageParam, limit=$resultsLimit")
+                android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "loadChartData fetching: days=$finalDays, results=$finalResults, avg=$averageParam, limit=$resultsLimit")
                 
                 var result = getHistoricalDataUseCase(
                     channelId = channelId,
@@ -194,7 +194,7 @@ class ChartViewModel @Inject constructor(
                 // FALLBACK LOGIC: If 7D/30D with average failed, try raw data as fallback with a SAFE limit.
                 // We use a hard limit of 2000 points for fallback to prevent OOM/Timeouts on large ranges.
                 if (result is ApiResult.Error && averageParam != null) {
-                    android.util.Log.w("TS_DEBUG", "Averaged fetch failed (timeout?), retrying with RAW fallback (limit=2000) for $channelId")
+                    android.util.Log.w(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "Averaged fetch failed (timeout?), retrying with RAW fallback (limit=2000) for $channelId")
                     result = getHistoricalDataUseCase(
                         channelId = channelId,
                         apiKey = apiKey,
@@ -218,33 +218,33 @@ class ChartViewModel @Inject constructor(
                                 stableBaselineX = lastLoadedFeeds.first().createdAt.let {
                                     try { java.time.Instant.parse(it).epochSecond } catch (e: Exception) { null }
                                 }
-                                android.util.Log.i("TS_DEBUG", "Stable BaselineX initialized: $stableBaselineX")
+                                android.util.Log.i(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "Stable BaselineX initialized: $stableBaselineX")
                             }
 
-                            android.util.Log.i("TS_DEBUG", "loadChartData SUCCESS: id=$channelId, received ${lastLoadedFeeds.size} entries. Range: [$startTs] - [$endTs]. Took ${System.currentTimeMillis() - startTime}ms")
+                            android.util.Log.i(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "loadChartData SUCCESS: id=$channelId, received ${lastLoadedFeeds.size} entries. Range: [$startTs] - [$endTs]. Took ${System.currentTimeMillis() - startTime}ms")
                             
                             processCurrentData()
                         }
                     }
                     is ApiResult.Error -> {
                         val detailedMsg = "API ERROR: ${result.message} (id=$channelId, days=$finalDays)"
-                        android.util.Log.e("TS_DEBUG", detailedMsg)
+                        android.util.Log.e(com.thingspeak.monitor.core.utils.APP_LOG_TAG, detailedMsg)
                         _uiState.value = ChartState.Error(detailedMsg)
                     }
                     else -> {
-                        android.util.Log.e("TS_DEBUG", "Unknown result type for $channelId")
+                        android.util.Log.e(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "Unknown result type for $channelId")
                     }
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) {
-                    android.util.Log.v("TS_DEBUG", "loadChartData cancelled (lifecycle) for $channelId")
+                    android.util.Log.v(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "loadChartData cancelled (lifecycle) for $channelId")
                 } else {
-                    android.util.Log.e("TS_DEBUG", "CRASH in loadChartData (id=$channelId)", e)
+                    android.util.Log.e(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "CRASH in loadChartData (id=$channelId)", e)
                     _uiState.value = ChartState.Error("Unexpected crash: ${e.message}")
                 }
             } finally {
                 if (!isSilent) _isRefreshing.value = false
-                android.util.Log.v("TS_DEBUG", "loadChartData FINISHED (finally) for $channelId")
+                android.util.Log.v(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "loadChartData FINISHED (finally) for $channelId")
             }
         }
     }
@@ -277,7 +277,7 @@ class ChartViewModel @Inject constructor(
 
     private fun processCurrentData() {
         if (lastLoadedFeeds.isEmpty()) {
-            android.util.Log.w("TS_DEBUG", "processCurrentData: EMPTY feeds for id=${_channelId.value}")
+            android.util.Log.w(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "processCurrentData: EMPTY feeds for id=${_channelId.value}")
             _uiState.value = ChartState.Empty
             return
         }
@@ -291,12 +291,12 @@ class ChartViewModel @Inject constructor(
             // --- DEBUG LOGGING (Agent 3.7.7) ---
             val firstTs = try { java.time.Instant.parse(lastLoadedFeeds.first().createdAt).epochSecond } catch (e: Exception) { -1L }
             val lastTs = try { java.time.Instant.parse(lastLoadedFeeds.last().createdAt).epochSecond } catch (e: Exception) { -1L }
-            android.util.Log.i("TS_DEBUG", "API Returned ${lastLoadedFeeds.size} feeds. Range: $firstTs to $lastTs. Requested Days: ${_currentRangeDays.value}")
+            android.util.Log.i(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "API Returned ${lastLoadedFeeds.size} feeds. Range: $firstTs to $lastTs. Requested Days: ${_currentRangeDays.value}")
             // -----------------------------------
 
             val resultsLimit = channel?.chartResults ?: 60
             val startTime = System.currentTimeMillis()
-            android.util.Log.v("TS_DEBUG", "processCurrentData: processing ${lastLoadedFeeds.size} points...")
+            android.util.Log.v(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "processCurrentData: processing ${lastLoadedFeeds.size} points...")
 
             val bundles = withContext(Dispatchers.Default) {
                 ChartDataProcessor.processFeedsToBundles(
@@ -323,12 +323,12 @@ class ChartViewModel @Inject constructor(
                     timezone = channel?.timezone
                 )
             }
-            android.util.Log.d("TS_DEBUG", "processCurrentData COMPLETED: id=${channel?.id}, bundles=${bundles.size}, stableBaselineX=$stableBaselineX. Took ${System.currentTimeMillis() - startTime}ms")
+            android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "processCurrentData COMPLETED: id=${channel?.id}, bundles=${bundles.size}, stableBaselineX=$stableBaselineX. Took ${System.currentTimeMillis() - startTime}ms")
             if (bundles.isEmpty()) {
-                android.util.Log.w("TS_DEBUG", "processCurrentData: BUNDLES EMPTY after processing!")
+                android.util.Log.w(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "processCurrentData: BUNDLES EMPTY after processing!")
             } else {
                 bundles.forEachIndexed { index, bundle ->
-                    android.util.Log.v("TS_DEBUG", "Bundle[$index]: title=${bundle.title}")
+                    android.util.Log.v(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "Bundle[$index]: title=${bundle.title}")
                 }
             }
             _uiState.value = if (bundles.isEmpty()) ChartState.Empty else ChartState.Success(bundles)
@@ -379,7 +379,7 @@ class ChartViewModel @Inject constructor(
                 timezone = timezone
             )
         } catch (e: Exception) {
-            android.util.Log.e("TS_DEBUG", "Error exporting PDF", e)
+            android.util.Log.e(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "Error exporting PDF", e)
         }
     }
 
@@ -394,11 +394,11 @@ class ChartViewModel @Inject constructor(
             appPreferences.observeRefreshInterval().collectLatest { interval ->
                 // Minimum 1s interval for charts to avoid API throttling
                 val safeInterval = interval.coerceAtLeast(1000L)
-                android.util.Log.i("TS_DEBUG", "ChartViewModel autoRefresh STARTED: interval=${safeInterval}ms")
+                android.util.Log.i(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "ChartViewModel autoRefresh STARTED: interval=${safeInterval}ms")
                 while (isActive) {
                     delay(safeInterval)
                     val channelId = _channelId.value ?: continue
-                    android.util.Log.v("TS_DEBUG", "ChartViewModel autoRefresh TICK for $channelId")
+                    android.util.Log.v(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "ChartViewModel autoRefresh TICK for $channelId")
                     loadChartData(isSilent = true)
                 }
             }

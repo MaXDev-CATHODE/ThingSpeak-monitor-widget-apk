@@ -40,13 +40,13 @@ object ChartDataProcessor {
         // 1. Prepare sorted feed context with logging
         val feedByTimestamp = feeds.mapNotNull { feed ->
             try { Instant.parse(feed.createdAt).epochSecond to feed } catch (e: Exception) { 
-                android.util.Log.w("TS_DEBUG", "Failed to parse timestamp: ${feed.createdAt}")
+                android.util.Log.w(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "Failed to parse timestamp: ${feed.createdAt}")
                 null 
             }
         }.sortedBy { it.first }
 
         if (feedByTimestamp.isEmpty()) {
-            android.util.Log.e("TS_DEBUG", "No valid feeds found after timestamp parsing!")
+            android.util.Log.e(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "No valid feeds found after timestamp parsing!")
             return emptyList()
         }
 

@@ -6,7 +6,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.TextUnitType
 import com.thingspeak.monitor.feature.channel.data.local.FeedEntryEntity
 
-const val WIDGET_LOG_TAG = "TS_DEBUG"
+const val WIDGET_LOG_TAG = com.thingspeak.monitor.core.utils.APP_LOG_TAG
 const val DEFAULT_SYNC_INTERVAL_MINUTES = 30L
 
 val Int.sp: TextUnit get() = TextUnit(this.toFloat(), TextUnitType.Sp)

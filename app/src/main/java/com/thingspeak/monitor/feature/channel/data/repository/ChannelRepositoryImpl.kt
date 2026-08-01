@@ -191,7 +191,7 @@ class ChannelRepositoryImpl @Inject constructor(
             
             // Map chartTimespan to API parameters
             // TS_DEBUG: Log context of refresh
-            android.util.Log.d("TS_DEBUG", "refreshFeed START: id=$channelId, timespan=$chartTimespan, reqResults=$results")
+            android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "refreshFeed START: id=$channelId, timespan=$chartTimespan, reqResults=$results")
 
             val finalResults = if (chartTimespan == null || chartTimespan == "1D") {
                 // For 1D we prefer temporal limit 'days=1' over 'results' to avoid date regression,
@@ -208,12 +208,12 @@ class ChannelRepositoryImpl @Inject constructor(
                 else -> 1 // Default to 1 day for background sync to avoid ancient data regression
             }
 
-            android.util.Log.d("TS_DEBUG", "refreshFeed params: finalResults=$finalResults, finalDays=$finalDays")
+            android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "refreshFeed params: finalResults=$finalResults, finalDays=$finalDays")
 
             // Retry loop for 429 (Rate Limit) - up to 15 seconds as requested
             while (System.currentTimeMillis() - startTime < 15000) {
                 try {
-                    android.util.Log.v("TS_DEBUG", "refreshFeed calling API for $channelId...")
+                    android.util.Log.v(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "refreshFeed calling API for $channelId...")
                     var response = api.getChannelFeed(
                         channelId = channelId,
                         apiKey = apiKey,
@@ -222,18 +222,18 @@ class ChannelRepositoryImpl @Inject constructor(
                     )
                     
                     if (!response.isSuccessful) {
-                        android.util.Log.w("TS_DEBUG", "refreshFeed API FAILED: code=${response.code()} for $channelId")
+                        android.util.Log.w(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "refreshFeed API FAILED: code=${response.code()} for $channelId")
                         if (response.code() == 429) {
                             val retryAfter = response.headers()["Retry-After"]?.toLongOrNull() ?: 2
                             lastException = RateLimitException(retryAfter)
-                            android.util.Log.w("TS_DEBUG", "Rate Limited (429). Retrying after ${retryAfter}s...")
+                            android.util.Log.w(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "Rate Limited (429). Retrying after ${retryAfter}s...")
                             kotlinx.coroutines.delay(retryAfter * 1000L)
                             continue // Retry
                         }
                         
                         // FALLBACK for refresh: try results=1 if 100 failed
                         if (finalResults != 1) {
-                            android.util.Log.w("TS_DEBUG", "refreshFeed falling back to results=1 for $channelId")
+                            android.util.Log.w(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "refreshFeed falling back to results=1 for $channelId")
                             response = api.getChannelFeed(
                                 channelId = channelId,
                                 apiKey = apiKey,
@@ -251,11 +251,11 @@ class ChannelRepositoryImpl @Inject constructor(
                     val body = response.body() ?: throw IllegalStateException("Empty response body")
                     val entities = body.feeds.map { it.toEntity(channelId) }
 
-                    android.util.Log.d("TS_DEBUG", "refreshFeed received ${entities.size} entries for $channelId")
+                    android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "refreshFeed received ${entities.size} entries for $channelId")
 
                     if (entities.isNotEmpty()) {
                         feedDao.upsertFeed(entities)
-                        android.util.Log.v("TS_DEBUG", "refreshFeed database UPSERT complete for $channelId")
+                        android.util.Log.v(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "refreshFeed database UPSERT complete for $channelId")
                     }
 
                     // Update channel metadata with SUCCESS status using merge pattern to PRESERVE widget styles
@@ -280,7 +280,7 @@ class ChannelRepositoryImpl @Inject constructor(
                         timezone = finalTimezone
                     )
                     channelPrefs.save(updatedChannel)
-                    android.util.Log.i("TS_DEBUG", "refreshFeed SUCCESS for $channelId. Took ${System.currentTimeMillis() - startTime}ms")
+                    android.util.Log.i(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "refreshFeed SUCCESS for $channelId. Took ${System.currentTimeMillis() - startTime}ms")
                     return@withContext // Success!
                 } catch (e: Exception) {
                     lastException = e
@@ -328,7 +328,7 @@ class ChannelRepositoryImpl @Inject constructor(
     ): List<FeedEntry> = withContext(ioDispatcher) {
         val startTime = System.currentTimeMillis()
         // TS_DEBUG: Log exact API parameters for historical data
-        android.util.Log.d("TS_DEBUG", "getHistoricalFeed START: id=$channelId, results=$results, days=$days, average=$average, start=$start, end=$end")
+        android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "getHistoricalFeed START: id=$channelId, results=$results, days=$days, average=$average, start=$start, end=$end")
         
         val response = api.getChannelFeed(
             channelId = channelId,
@@ -342,12 +342,12 @@ class ChannelRepositoryImpl @Inject constructor(
         
         if (!response.isSuccessful) {
             val errorMsg = response.errorBody()?.string() ?: "HTTP ${response.code()}"
-            android.util.Log.e("TS_DEBUG", "getHistoricalFeed API ERROR: id=$channelId, error=$errorMsg")
+            android.util.Log.e(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "getHistoricalFeed API ERROR: id=$channelId, error=$errorMsg")
             throw Exception(errorMsg)
         }
         
         val feeds = response.body()?.feeds ?: emptyList()
-        android.util.Log.d("TS_DEBUG", "getHistoricalFeed SUCCESS: id=$channelId, received ${feeds.size} items. Took ${System.currentTimeMillis() - startTime}ms")
+        android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "getHistoricalFeed SUCCESS: id=$channelId, received ${feeds.size} items. Took ${System.currentTimeMillis() - startTime}ms")
 
         return@withContext feeds.map { dto ->
             dto.toEntity(channelId).toDomain()

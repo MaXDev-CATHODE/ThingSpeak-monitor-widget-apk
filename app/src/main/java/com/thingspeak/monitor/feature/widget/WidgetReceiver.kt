@@ -6,9 +6,6 @@ import android.content.Intent
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import javax.inject.Inject
 
 /**
@@ -25,15 +22,12 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
 
     override val glanceAppWidget: GlanceAppWidget = ThingSpeakGlanceWidget()
 
-    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
         handleReceiverOnUpdate(
             context = context,
             appWidgetIds = appWidgetIds,
             widgetFactory = { ThingSpeakGlanceWidget() },
-            scope = cleanupScope,
             repository = repository
         )
     }
@@ -50,11 +44,11 @@ class WidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
-        handleReceiverOnDeleted(context, appWidgetIds, cleanupScope, repository)
+        handleReceiverOnDeleted(context, appWidgetIds, repository)
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        handleReceiverOnDisabled(context, cleanupScope, repository, "WidgetReceiver")
+        handleReceiverOnDisabled(context, repository, "WidgetReceiver")
     }
 }

@@ -56,14 +56,13 @@ fun handleReceiverOnUpdate(
     context: Context,
     appWidgetIds: IntArray,
     widgetFactory: () -> androidx.glance.appwidget.GlanceAppWidget,
-    scope: CoroutineScope,
     repository: WidgetBindingRepository
 ) {
     android.util.Log.i(WIDGET_LOG_TAG, "Receiver onUpdate: triggered for ids=${appWidgetIds.joinToString()}")
     enqueuePeriodicRefreshIfNeeded(context)
 
     appWidgetIds.forEach { id ->
-        scope.launch {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val boundId = repository.getBindingSync(id)
                 if (boundId > 0) {
@@ -91,14 +90,13 @@ fun handleReceiverOnUpdate(
 fun handleReceiverOnDeleted(
     context: Context,
     appWidgetIds: IntArray,
-    scope: CoroutineScope,
     repository: WidgetBindingRepository
 ) {
     android.util.Log.i(WIDGET_LOG_TAG, "onDeleted: ids=${appWidgetIds.joinToString()}")
     WidgetUpdateHelper.cancelRefreshIfNoWidgetsLeft(context)
     appWidgetIds.forEach { id ->
         cancelRefreshTimeout(id)
-        scope.launch {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 repository.removeBinding(id)
                 WidgetChartCache.clear(context, id)
@@ -112,12 +110,11 @@ fun handleReceiverOnDeleted(
 
 fun handleReceiverOnDisabled(
     context: Context,
-    scope: CoroutineScope,
     repository: WidgetBindingRepository,
     logTag: String
 ) {
     android.util.Log.i(WIDGET_LOG_TAG, "$logTag onDisabled: cleaning orphaned bindings")
-    scope.launch {
+    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
         try {
             repository.clearAllBindings()
             WidgetChartCache.clearAll(context)

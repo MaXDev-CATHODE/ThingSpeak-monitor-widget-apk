@@ -11,22 +11,27 @@ class ThingSpeakGlanceWidget : GlanceAppWidget() {
     override val sizeMode = androidx.glance.appwidget.SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val gCtx = WidgetUpdateHelper.resolveGlanceContext(context, id)
+        val gCtx = try {
+            WidgetUpdateHelper.resolveGlanceContext(context, id)
+        } catch (e: Exception) {
+            android.util.Log.e(WIDGET_LOG_TAG, "ThingSpeakGlanceWidget: resolveGlanceContext failed", e)
+            return
+        }
 
-provideContent {
-                val prefs = androidx.glance.currentState<androidx.datastore.preferences.core.Preferences>()
-                val data = loadWidgetDataFromPreferences(prefs, gCtx.boundChannelId, gCtx.syncIntervalMinutes)
+        provideContent {
+            val prefs = androidx.glance.currentState<androidx.datastore.preferences.core.Preferences>()
+            val data = loadWidgetDataFromPreferences(prefs, gCtx.boundChannelId, gCtx.syncIntervalMinutes)
 
-                if (WidgetUpdateHelper.shouldTriggerSelfHeal(prefs, data, gCtx.boundChannelId)) {
-                    androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
-                        WidgetUpdateHelper.bumpHealRetry(context, id)
-                        updateAppWidget(context, gCtx.appWidgetId)
-                    }
-                } else if (WidgetUpdateHelper.isHealExhausted(prefs, data, gCtx.boundChannelId)) {
-                    androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
-                        WidgetUpdateHelper.handleHealExhausted(context, id)
-                    }
+            if (WidgetUpdateHelper.shouldTriggerSelfHeal(prefs, data, gCtx.boundChannelId)) {
+                androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
+                    WidgetUpdateHelper.bumpHealRetry(context, id)
+                    updateAppWidget(context, gCtx.appWidgetId)
                 }
+            } else if (WidgetUpdateHelper.isHealExhausted(prefs, data, gCtx.boundChannelId)) {
+                androidx.compose.runtime.LaunchedEffect(gCtx.boundChannelId) {
+                    WidgetUpdateHelper.handleHealExhausted(context, id)
+                }
+            }
 
             WidgetUI(data)
         }

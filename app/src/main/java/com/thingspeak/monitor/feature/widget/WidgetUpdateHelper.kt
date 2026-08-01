@@ -65,31 +65,26 @@ object WidgetUpdateHelper {
      * Increments the heal retry counter so the widget does not attempt healing
      * indefinitely. Must be called just before starting the heal update cycle.
      */
-    @JvmStatic
-    fun bumpHealRetry(context: Context, glanceId: GlanceId) {
-        kotlinx.coroutines.runBlocking {
-            updateAppWidgetState(
-                context, WidgetPreferencesStateDefinition, glanceId
-            ) { p ->
-                p.toMutablePreferences().apply {
-                    val current = this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] ?: 0
-                    this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = (current + 1).coerceAtMost(9)
-                    this[WidgetPrefsKeys.KEY_HEAL_LAST_ATTEMPT_MS] = System.currentTimeMillis()
-                }
+    suspend fun bumpHealRetry(context: Context, glanceId: GlanceId) {
+        updateAppWidgetState(
+            context, WidgetPreferencesStateDefinition, glanceId
+        ) { p ->
+            p.toMutablePreferences().apply {
+                val current = this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] ?: 0
+                this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = (current + 1).coerceAtMost(9)
+                this[WidgetPrefsKeys.KEY_HEAL_LAST_ATTEMPT_MS] = System.currentTimeMillis()
             }
         }
     }
 
-    fun handleHealExhausted(context: Context, glanceId: GlanceId) {
-        kotlinx.coroutines.runBlocking {
-            updateAppWidgetState(
-                context, WidgetPreferencesStateDefinition, glanceId
-            ) { p ->
-                p.toMutablePreferences().apply {
-                    this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
-                    this[WidgetPrefsKeys.KEY_HEAL_LAST_ATTEMPT_MS] = 0L
-                    this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
-                }
+    suspend fun handleHealExhausted(context: Context, glanceId: GlanceId) {
+        updateAppWidgetState(
+            context, WidgetPreferencesStateDefinition, glanceId
+        ) { p ->
+            p.toMutablePreferences().apply {
+                this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
+                this[WidgetPrefsKeys.KEY_HEAL_LAST_ATTEMPT_MS] = 0L
+                this[WidgetPrefsKeys.KEY_HEAL_ATTEMPTED] = false
             }
         }
         enqueuePeriodicRefreshIfNeeded(context)
@@ -205,7 +200,7 @@ object WidgetUpdateHelper {
 
         val glanceId = findWidgetGlanceId(context, appWidgetId, maxRetries = MAX_GLANCE_RETRIES)
         if (glanceId == null) {
-            android.util.Log.e("TS_DEBUG", "updateWidget: Could not find GlanceId for $appWidgetId")
+            android.util.Log.e(WIDGET_LOG_TAG, "updateWidget: Could not find GlanceId for $appWidgetId")
             return
         }
 
@@ -262,7 +257,7 @@ object WidgetUpdateHelper {
         maxSetFields: Set<Int> = emptySet(),
         skipChartPrefs: Boolean = false
     ) {
-        android.util.Log.d("TS_DEBUG", "updateWidgetPreferences: START for channel ${channel.id}, glanceId=$glanceId")
+        android.util.Log.d(WIDGET_LOG_TAG, "updateWidgetPreferences: START for channel ${channel.id}, glanceId=$glanceId")
         val cachedEntryStr = latestFeed?.let { f ->
             try {
                 JSONObject().apply {
@@ -286,7 +281,7 @@ object WidgetUpdateHelper {
         }.toString()
 
         updateAppWidgetState(context, WidgetPreferencesStateDefinition, glanceId) { prefs ->
-            android.util.Log.d("TS_DEBUG", "PUSHING preferences to widget for channel ${channel.id}")
+            android.util.Log.d(WIDGET_LOG_TAG, "PUSHING preferences to widget for channel ${channel.id}")
             prefs.toMutablePreferences().apply {
                 this[WidgetPrefsKeys.KEY_CHANNEL_ID] = channel.id
                 this[WidgetPrefsKeys.KEY_CHANNEL_NAME] = channel.name
@@ -351,7 +346,7 @@ object WidgetUpdateHelper {
                 this[WidgetPrefsKeys.KEY_HEAL_RETRY_COUNT] = 0
             }
         }
-        android.util.Log.i("TS_DEBUG", "updateWidgetPreferences: SUCCESS for channel ${channel.id}")
+        android.util.Log.i(WIDGET_LOG_TAG, "updateWidgetPreferences: SUCCESS for channel ${channel.id}")
     }
 
     /**

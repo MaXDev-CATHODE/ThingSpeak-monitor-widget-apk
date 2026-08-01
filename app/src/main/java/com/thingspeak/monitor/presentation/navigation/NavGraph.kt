@@ -50,7 +50,7 @@ fun NavGraph(
         }
         composable<Screen.Chart> { backStackEntry ->
             val route: Screen.Chart = backStackEntry.toRoute()
-            android.util.Log.d("TS_DEBUG", "NavGraph: navigating to Screen.Chart(id=${route.channelId})")
+            android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "NavGraph: navigating to Screen.Chart(id=${route.channelId})")
             ChartScreen(
                 onNavigateBack = { navController.popBackStack() },
                 channelId = route.channelId,

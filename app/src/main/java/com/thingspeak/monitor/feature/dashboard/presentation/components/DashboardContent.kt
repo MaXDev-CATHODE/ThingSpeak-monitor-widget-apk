@@ -65,7 +65,7 @@ fun DashboardContent(
                 ChannelCard(
                     channel = channel,
                     onClick = { 
-                        android.util.Log.d("TS_DEBUG", "DashboardContent: onClick for channel ${channel.id}")
+                        android.util.Log.d(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "DashboardContent: onClick for channel ${channel.id}")
                         onNavigateToChart(channel.id, channel.name, channel.apiKey) 
                     },
                     onRemoveClick = onRemoveChannel,

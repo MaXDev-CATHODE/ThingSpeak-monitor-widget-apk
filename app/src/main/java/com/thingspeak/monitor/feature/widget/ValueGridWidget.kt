@@ -11,7 +11,12 @@ class ValueGridWidget : GlanceAppWidget() {
     override val sizeMode = androidx.glance.appwidget.SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val gCtx = WidgetUpdateHelper.resolveGlanceContext(context, id)
+        val gCtx = try {
+            WidgetUpdateHelper.resolveGlanceContext(context, id)
+        } catch (e: Exception) {
+            android.util.Log.e(WIDGET_LOG_TAG, "ValueGridWidget: resolveGlanceContext failed", e)
+            return
+        }
 
         provideContent {
             val prefs = androidx.glance.currentState<androidx.datastore.preferences.core.Preferences>()
