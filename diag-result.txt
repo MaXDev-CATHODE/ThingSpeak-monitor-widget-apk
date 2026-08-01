@@ -1,0 +1,17 @@
+INIT SCRIPT APPLIED
+APP_PLUGIN applied on :app
+  androidComponents=true
+  selector() method=public com.android.build.api.extension.impl.VariantSelectorImpl com.android.build.api.extension.impl.AndroidComponentsExtensionImpl.selector()
+  selector().all() method=public com.android.build.api.variant.VariantSelector com.android.build.api.extension.impl.VariantSelectorImpl.all()
+  fast-path getMethod NOT FOUND
+  slow-path candidates (3):
+    public void com.android.build.gradle.internal.plugins.AppPlugin$ApplicationAndroidComponentsExtensionImplCompat_Decorated.onVariants(com.android.build.api.variant.VariantSelector,groovy.lang.Closure)
+    public void com.android.build.api.extension.impl.AndroidComponentsExtensionImpl.onVariants(com.android.build.api.variant.VariantSelector,kotlin.jvm.functions.Function1)
+    public void com.android.build.api.extension.impl.AndroidComponentsExtensionImpl.onVariants(com.android.build.api.variant.VariantSelector,org.gradle.api.Action)
+  slow-path result: public void com.android.build.api.extension.impl.AndroidComponentsExtensionImpl.onVariants(com.android.build.api.variant.VariantSelector,org.gradle.api.Action)
+  invoke via resolveMethod OK -> null
+    LSP-STYLE CB variant=com.android.build.api.variant.impl.ApplicationVariantImpl_Decorated@913dae4
+    LSP-STYLE CB variant=com.android.build.api.variant.impl.ApplicationVariantImpl_Decorated@64a4058d
+DIAG project=: SourceSetContainer=false count=0 androidComponents=false ksp=false
+DIAG project=:app SourceSetContainer=true count=0 androidComponents=true ksp=true
+DONE

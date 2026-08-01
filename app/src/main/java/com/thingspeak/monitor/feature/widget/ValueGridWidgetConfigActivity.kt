@@ -122,41 +122,39 @@ class ValueGridWidgetConfigActivity : ComponentActivity() {
                             if (!saveGuard.compareAndSet(false, true)) return@WidgetConfigScreen
                             isSaving = true
                             coroutineScope.launch {
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                                    try {
-                                        val gId = findWidgetGlanceId(applicationContext, appWidgetId, widgetClasses = widgetClasses)
-                                        saveWidgetConfigAndRefresh(
-                                            context = applicationContext,
-                                            appWidgetId = appWidgetId,
-                                            glanceId = gId,
-                                            channelId = channelId,
-                                            channelName = name,
-                                            apiKey = apiKey,
-                                            bgColor = bgColor,
-                                            textColor = txtColor,
-                                            transparency = transparency,
-                                            fontSize = fontSize,
-                                            visibleFields = visibleFields,
-                                            isGlass = isGlass,
-                                            bgColorMode = colorMode,
-                                            chartResultsCount = chResultsCount,
-                                            alertRules = alertRules,
-                                            skipChartClear = true,
-                                            channelPreferences = channelPreferences,
-                                            widgetBindingRepository = widgetBindingRepository,
-                                            updateWidget = { ValueGridWidget().update(applicationContext, gId!!) },
-                                            onResult = {
-                                                val resultIntent = Intent().apply {
-                                                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                                                }
-                                                setResult(RESULT_OK, resultIntent)
-                                                finish()
+                                try {
+                                    val gId = findWidgetGlanceId(applicationContext, appWidgetId, widgetClasses = widgetClasses)
+                                    saveWidgetConfigAndRefresh(
+                                        context = applicationContext,
+                                        appWidgetId = appWidgetId,
+                                        glanceId = gId,
+                                        channelId = channelId,
+                                        channelName = name,
+                                        apiKey = apiKey,
+                                        bgColor = bgColor,
+                                        textColor = txtColor,
+                                        transparency = transparency,
+                                        fontSize = fontSize,
+                                        visibleFields = visibleFields,
+                                        isGlass = isGlass,
+                                        bgColorMode = colorMode,
+                                        chartResultsCount = chResultsCount,
+                                        alertRules = alertRules,
+                                        skipChartClear = true,
+                                        channelPreferences = channelPreferences,
+                                        widgetBindingRepository = widgetBindingRepository,
+                                        updateWidget = { ValueGridWidget().update(applicationContext, gId!!) },
+                                        onResult = {
+                                            val resultIntent = Intent().apply {
+                                                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                                             }
-                                        )
-                                    } catch (e: Exception) {
-                                        android.util.Log.e(WIDGET_LOG_TAG, "FATAL onSave error", e)
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { finish() }
-                                    }
+                                            setResult(RESULT_OK, resultIntent)
+                                            finish()
+                                        }
+                                    )
+                                } catch (e: Exception) {
+                                    android.util.Log.e(WIDGET_LOG_TAG, "FATAL onSave error", e)
+                                    finish()
                                 }
                             }
                         }
