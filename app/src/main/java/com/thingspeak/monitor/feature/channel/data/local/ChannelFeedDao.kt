@@ -17,28 +17,32 @@ interface ChannelFeedDao {
 
     /**
      * Observes the latest entries for a given channel (sorted from newest).
+     * Future timestamps (corrupt year-2106 entries from the ThingSpeak API)
+     * are excluded.
      */
-    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId ORDER BY entryId DESC")
+    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId AND datetime(createdAt) <= datetime('now') ORDER BY datetime(createdAt) DESC")
     fun observeFeedEntries(channelId: Long): Flow<List<FeedEntryEntity>>
 
     /**
      * V10: Limit data for chart widgets to prevent SLOW loading.
      */
-    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId ORDER BY entryId DESC LIMIT :limit")
+    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId AND datetime(createdAt) <= datetime('now') ORDER BY datetime(createdAt) DESC LIMIT :limit")
     fun observeLatestFeedEntries(channelId: Long, limit: Int): Flow<List<FeedEntryEntity>>
 
     /**
      * V10: Super fast for ValueGridWidget which only needs one entry.
      */
-    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId ORDER BY entryId DESC LIMIT 1")
+    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId AND datetime(createdAt) <= datetime('now') ORDER BY datetime(createdAt) DESC LIMIT 1")
     fun observeLastEntry(channelId: Long): Flow<List<FeedEntryEntity>>
 
     /**
      * Point-in-time query: returns the latest entry directly from Room after upsert completes.
      * Unlike Flow-based queries, this suspend function guarantees reading post-transaction data,
      * eliminating the race condition where observeFeed().firstOrNull() may return a stale buffer.
+     * Ordered by createdAt (not entryId) so out-of-order API data and corrupt future entries
+     * never win the "latest" selection.
      */
-    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId ORDER BY entryId DESC LIMIT 1")
+    @Query("SELECT * FROM feed_entries WHERE channelId = :channelId AND datetime(createdAt) <= datetime('now') ORDER BY datetime(createdAt) DESC LIMIT 1")
     suspend fun getLatestEntry(channelId: Long): FeedEntryEntity?
 
     /**

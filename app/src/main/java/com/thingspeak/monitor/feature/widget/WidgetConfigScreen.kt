@@ -86,9 +86,9 @@ fun WidgetConfigScreen(
     initialAlertRules: List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule> = emptyList(),
     onSave: (channelId: Long, apiKey: String, channelName: String, bgColor: String?, textColor: String?, transparency: Float, fontSize: Int, visibleFields: Set<Int>, chartField: Int, isGlass: Boolean, bgColorMode: String?, chartResults: Int, alertRules: List<com.thingspeak.monitor.feature.channel.domain.model.AlertRule>) -> Unit,
 ) {
-    var channelIdText by remember { mutableStateOf(initialChannelId?.toString() ?: "") }
-    var apiKey by remember { mutableStateOf(initialApiKey ?: "") }
-    var channelName by remember { mutableStateOf(initialChannelName ?: "") }
+    var channelIdText by remember(initialChannelId) { mutableStateOf(initialChannelId?.toString() ?: "") }
+    var apiKey by remember(initialApiKey) { mutableStateOf(initialApiKey ?: "") }
+    var channelName by remember(initialChannelName) { mutableStateOf(initialChannelName ?: "") }
     var channelIdError by remember { mutableStateOf(false) }
     var apiKeyVisible by remember { mutableStateOf(false) }
     
@@ -104,15 +104,15 @@ fun WidgetConfigScreen(
             }
         }
     }
-    var chartField by remember { mutableIntStateOf(initialChartField ?: 1) }
+    var chartField by remember(initialChartField) { mutableIntStateOf(initialChartField ?: 1) }
 
-    var selectedColorHex by remember { mutableStateOf<String?>(initialBgColorHex ?: "#FFFFFF") }
-    var selectedTextColorHex by remember { mutableStateOf<String?>(initialTextColorHex) }
-    var transparency by remember { mutableStateOf(initialTransparency ?: 1.0f) }
-    var fontSize by remember { mutableStateOf(initialFontSize?.toFloat() ?: 12f) }
-    var isGlass by remember { mutableStateOf(initialIsGlass ?: false) }
-    var bgColorMode by remember { mutableStateOf(initialBgColorMode ?: WidgetPrefsKeys.COLOR_MODE_CUSTOM) }
-    var chartResults by remember { mutableStateOf(initialChartResults?.toFloat() ?: 60f) }
+    var selectedColorHex by remember(initialBgColorHex) { mutableStateOf<String?>(initialBgColorHex ?: "#FFFFFF") }
+    var selectedTextColorHex by remember(initialTextColorHex) { mutableStateOf<String?>(initialTextColorHex) }
+    var transparency by remember(initialTransparency) { mutableStateOf(initialTransparency ?: 1.0f) }
+    var fontSize by remember(initialFontSize) { mutableStateOf(initialFontSize?.toFloat() ?: 12f) }
+    var isGlass by remember(initialIsGlass) { mutableStateOf(initialIsGlass ?: false) }
+    var bgColorMode by remember(initialBgColorMode) { mutableStateOf(initialBgColorMode ?: WidgetPrefsKeys.COLOR_MODE_CUSTOM) }
+    var chartResults by remember(initialChartResults) { mutableStateOf(initialChartResults?.toFloat() ?: 60f) }
 
     // Map of fieldNumber -> (Min string, Max string)
     var fieldAlerts by remember(initialAlertRules, initialVisibleFields) {

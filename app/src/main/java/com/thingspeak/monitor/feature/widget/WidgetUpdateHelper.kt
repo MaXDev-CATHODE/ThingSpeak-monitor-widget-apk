@@ -216,7 +216,7 @@ object WidgetUpdateHelper {
         val channel = savedChannels.find { it.id == channelId } ?: return
 
         val feeds = getChannelFeed.observe(channelId).first()
-        val latestFeed = feeds.lastOrNull()
+        val latestFeed = WidgetUtils.selectLatestEntry(feeds)
 
         val glanceId = findWidgetGlanceId(context, appWidgetId, maxRetries = MAX_GLANCE_RETRIES)
         if (glanceId == null) {
@@ -354,7 +354,10 @@ object WidgetUpdateHelper {
                 }
 
                 if (!skipChartPrefs) {
-                    this[WidgetPrefsKeys.KEY_CHART_RESULTS] = channel.chartResults ?: 60
+                    this[WidgetPrefsKeys.KEY_CHART_RESULTS] = WidgetUtils.resolveChartResultsOnPush(
+                        existingChartResults = this[WidgetPrefsKeys.KEY_CHART_RESULTS],
+                        channelDefault = channel.chartResults
+                    )
                 }
 
                 this[WidgetPrefsKeys.KEY_VIOLATED_MIN_FIELDS] = violatedMinFields.map { it.toString() }.toSet()

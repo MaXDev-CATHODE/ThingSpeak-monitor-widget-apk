@@ -19,7 +19,8 @@ data class SavedWidgetPrefs(
     val fontSize: Int?,
     val isGlass: Boolean?,
     val bgColorMode: String?,
-    val visibleFields: Set<Int>?
+    val visibleFields: Set<Int>?,
+    val chartResults: Int?
 )
 
 suspend fun loadSavedWidgetPrefs(
@@ -42,7 +43,8 @@ suspend fun loadSavedWidgetPrefs(
         bgColorMode = prefs?.get(WidgetPrefsKeys.KEY_BG_COLOR_MODE),
         visibleFields = prefs?.get(WidgetPrefsKeys.KEY_VISIBLE_FIELDS)
             ?.mapNotNull { it.toIntOrNull() }
-            ?.toSet()
+            ?.toSet(),
+        chartResults = prefs?.get(WidgetPrefsKeys.KEY_CHART_RESULTS)
     )
 }
 

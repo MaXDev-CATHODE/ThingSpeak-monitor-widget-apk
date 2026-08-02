@@ -43,7 +43,11 @@ object ChartDataProcessor {
                 android.util.Log.w(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "Failed to parse timestamp: ${feed.createdAt}")
                 null 
             }
-        }.sortedBy { it.first }
+        }
+            // Ignore corrupt future timestamps (e.g. year 2106 entries from ThingSpeak API)
+            // that would otherwise stretch the axis and empty the chart.
+            .filter { it.first <= now.epochSecond }
+            .sortedBy { it.first }
 
         if (feedByTimestamp.isEmpty()) {
             android.util.Log.e(com.thingspeak.monitor.core.utils.APP_LOG_TAG, "No valid feeds found after timestamp parsing!")

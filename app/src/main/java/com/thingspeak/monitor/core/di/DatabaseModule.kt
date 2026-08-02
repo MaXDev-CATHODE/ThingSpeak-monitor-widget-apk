@@ -62,6 +62,22 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+        override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                DELETE FROM `feed_entries`
+                WHERE `id` NOT IN (
+                    SELECT MIN(`id`) FROM `feed_entries` GROUP BY `channelId`, `entryId`
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_feed_entries_channelId_entryId` ON `feed_entries` (`channelId`, `entryId`)"
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): ThingSpeakDatabase {
@@ -70,7 +86,7 @@ object DatabaseModule {
             ThingSpeakDatabase::class.java,
             "thingspeak_monitor.db"
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_5_6, MIGRATION_8_9)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_5_6, MIGRATION_8_9, MIGRATION_9_10)
             .enableMultiInstanceInvalidation()
             .fallbackToDestructiveMigration()
             .build()

@@ -1,6 +1,7 @@
 package com.thingspeak.monitor.feature.widget
 
 import android.content.Context
+import com.thingspeak.monitor.feature.channel.domain.model.FeedEntry
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -18,6 +19,30 @@ object WidgetUtils {
             null
         }
     }
+
+    /**
+     * Returns the entry with the newest [FeedEntry.createdAt] among entries whose
+     * timestamp parses and is not in the future. Corrupt future timestamps
+     * (e.g. year 2106 entries from the ThingSpeak API) are ignored.
+     */
+    fun selectLatestEntry(entries: List<FeedEntry>, now: Instant = Instant.now()): FeedEntry? {
+        val nowMs = now.toEpochMilli()
+        return entries
+            .mapNotNull { entry ->
+                parseIsoTime(entry.createdAt)?.let { timestamp -> entry to timestamp }
+            }
+            .filter { it.second <= nowMs }
+            .maxByOrNull { it.second }
+            ?.first
+    }
+
+    /**
+     * Resolves the chart results count when pushing widget preferences.
+     * Preserves the user's per-widget setting; only falls back to the channel
+     * default when the widget has no value yet.
+     */
+    fun resolveChartResultsOnPush(existingChartResults: Int?, channelDefault: Int?): Int =
+        existingChartResults ?: channelDefault ?: 60
 
     fun isDataStale(createdAt: String, thresholdMs: Long): Boolean {
         val timestamp = parseIsoTime(createdAt) ?: return true

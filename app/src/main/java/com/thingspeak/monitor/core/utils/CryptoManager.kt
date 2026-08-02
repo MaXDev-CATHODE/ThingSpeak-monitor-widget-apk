@@ -26,18 +26,19 @@ class CryptoManager @Inject constructor(
         )
     }
 
-    /**
-     * Store an API key securely.
-     */
     fun saveApiKey(channelId: Long, apiKey: String?) {
-        sharedPrefs.edit().putString("key_$channelId", apiKey).apply()
+        val sanitized = apiKey?.let { sanitizeApiKey(it) }
+        sharedPrefs.edit().putString("key_$channelId", sanitized).apply()
     }
 
-    /**
-     * Retrieve a secured API key.
-     */
     fun getApiKey(channelId: Long): String? {
-        return sharedPrefs.getString("key_$channelId", null)
+        val raw = sharedPrefs.getString("key_$channelId", null)
+        return raw?.let { sanitizeApiKey(it) }
+    }
+
+    private fun sanitizeApiKey(key: String): String {
+        val sanitized = key.replace(Regex("[\\r\\n\\t]"), "").trim()
+        return if (sanitized.length > 256) sanitized.take(256) else sanitized
     }
 
     /**

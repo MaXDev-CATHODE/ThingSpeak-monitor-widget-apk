@@ -146,4 +146,33 @@ class WidgetPrefsTransformTest {
             storedFields
         )
     }
+
+    // -------------------------------------------------------------------------
+    // BUG: chart_results overwritten by channel default on every HF push
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun bugCondition_chartResultsPreservedAcrossPush() {
+        // ChannelPreferences holds default 60 (config save does not update it)
+        val result = WidgetUtils.resolveChartResultsOnPush(
+            existingChartResults = 3000,
+            channelDefault = 60
+        )
+
+        assertEquals(
+            "chart_results set by user (3000) must survive the HF push; " +
+                "Bug: push overwrote it with channel default 60.",
+            3000, result
+        )
+    }
+
+    @Test
+    fun chartResultsFallsBackToChannelDefaultWhenAbsent() {
+        assertEquals(120, WidgetUtils.resolveChartResultsOnPush(null, 120))
+    }
+
+    @Test
+    fun chartResultsDefaultsTo60WhenBothAbsent() {
+        assertEquals(60, WidgetUtils.resolveChartResultsOnPush(null, null))
+    }
 }

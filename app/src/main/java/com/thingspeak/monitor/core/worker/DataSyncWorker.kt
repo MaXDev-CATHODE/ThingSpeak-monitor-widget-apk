@@ -138,10 +138,9 @@ class DataSyncWorker @AssistedInject constructor(
 
         fun constraints(): Constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
-        fun schedule(context: Context, intervalMinutes: Long) {
+fun schedule(context: Context, intervalMinutes: Long) {
             val request = PeriodicWorkRequestBuilder<DataSyncWorker>(intervalMinutes, TimeUnit.MINUTES)
                 .setConstraints(constraints())
-                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, WorkRequest.MIN_BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
@@ -150,7 +149,6 @@ class DataSyncWorker @AssistedInject constructor(
         fun scheduleWithUpdate(context: Context, intervalMinutes: Long) {
             val request = PeriodicWorkRequestBuilder<DataSyncWorker>(intervalMinutes, TimeUnit.MINUTES)
                 .setConstraints(constraints())
-                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, WorkRequest.MIN_BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)

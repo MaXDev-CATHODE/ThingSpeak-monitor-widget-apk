@@ -73,4 +73,50 @@ class ChartDataProcessorTest {
         )
         assertTrue(bundles.isEmpty())
     }
+
+    @Test
+    fun `processFeedsToBundles ignores corrupt future timestamps`() {
+        val now = Instant.now()
+        val feeds = listOf(
+            FeedEntry(createdAt = now.minusSeconds(3600).toString(), fields = mapOf(1 to "10.0")),
+            FeedEntry(createdAt = "2106-02-07T06:28:15Z", fields = mapOf(1 to "99.0"))
+        )
+
+        val bundles = ChartDataProcessor.processFeedsToBundles(
+            feeds = feeds,
+            currentRangeDays = 1,
+            selectedFields = setOf(1),
+            isMergingEnabled = false,
+            isNormalized = false,
+            fieldNames = mapOf(1 to "Temp"),
+            now = now
+        )
+
+        assertEquals(1, bundles.size)
+        val bundle = bundles.first() as ChartDataBundle.Line
+        assertEquals(1, bundle.lineData.entryCount)
+        assertEquals(10.0f, bundle.lineData.getDataSetByIndex(0).getEntryForIndex(0).y, 0.001f)
+    }
+
+    @Test
+    fun `processFeedsToBundles keeps chart non-empty with corrupt future entry among many feeds`() {
+        val now = Instant.now()
+        val feeds = (0 until 1000).map { i ->
+            FeedEntry(createdAt = now.minusSeconds(6000L - i * 5).toString(), fields = mapOf(1 to "${i.toFloat()}"))
+        } + FeedEntry(createdAt = "2106-02-07T06:28:15Z", fields = mapOf(1 to "99.0"))
+
+        val bundles = ChartDataProcessor.processFeedsToBundles(
+            feeds = feeds,
+            currentRangeDays = 1,
+            selectedFields = setOf(1),
+            isMergingEnabled = false,
+            isNormalized = false,
+            fieldNames = mapOf(1 to "Temp"),
+            now = now
+        )
+
+        assertEquals(1, bundles.size)
+        val bundle = bundles.first() as ChartDataBundle.Line
+        assertTrue("Expected entries in chart, got ${bundle.lineData.entryCount}", bundle.lineData.entryCount > 0)
+    }
 }

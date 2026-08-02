@@ -87,7 +87,7 @@ class WidgetConfigActivity : ComponentActivity() {
                     initialTransparency = savedTransparency ?: existing?.widgetTransparency ?: 1.0f,
                     initialIsGlass = savedIsGlass ?: existing?.isGlassmorphismEnabled,
                     initialBgColorMode = savedBgColorMode,
-                    initialChartResults = existing?.chartResults ?: 60,
+                    initialChartResults = savedPrefs?.chartResults ?: existing?.chartResults ?: 60,
                     initialFontSize = savedFontSize ?: existing?.widgetFontSize ?: 12,
                     initialTextColorHex = savedTextColor ?: existing?.widgetTextColorHex,
                     initialVisibleFields = savedVisibleFields ?: existing?.widgetVisibleFields ?: emptySet(),

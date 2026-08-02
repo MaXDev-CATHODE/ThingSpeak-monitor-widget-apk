@@ -12,7 +12,11 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "feed_entries",
-    indices = [Index(value = ["channelId", "createdAt"]), Index(value = ["createdAt"])]
+    indices = [
+        Index(value = ["channelId", "entryId"], unique = true),
+        Index(value = ["channelId", "createdAt"]),
+        Index(value = ["createdAt"])
+    ]
 )
 data class FeedEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
